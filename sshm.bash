@@ -43,7 +43,7 @@ EOF
 ssh_manager_list() {
   local config_file=~/.ssh/config
   echo -e "\nList of SSH hosts:"
-  grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | nl
+  grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | nl
   
   echo -ne "\nEnter the number or name of the host (or press Enter to exit): "
   read host
