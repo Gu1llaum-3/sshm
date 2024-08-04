@@ -19,29 +19,40 @@
 set -eo pipefail; [[ $TRACE ]] && set -x
 
 readonly VERSION="1.0.0"
+CONFIG_FILE=${SSHM_CONFIG:-~/.ssh/config}
 
 ssh_manager_version() {
   echo "ssh_manager $VERSION"
 }
 
 ssh_manager_help() {
-  echo "Usage: ssh_manager command <command-specific-options>"
+  echo "Usage: ssh_manager command [--config <file>|-c <file>] <command-specific-options>"
   echo
-  cat<<EOF | column -c2 -t -s,
-  list, List SSH hosts and prompt for connection
-  connect <number|name>, Connect to SSH host by number or name
-  ping <name>, Ping an SSH host to check availability
-  view <name>, Check configuration of host
-  delete <name>, Delete an SSH host from the configuration
-  add, Add an SSH host to the configuration
-  help, Displays help
-  version, Displays the current version
+  echo "Commands:"
+  cat<<EOF | column -t -s $'\t'
+  list                    List SSH hosts and prompt for connection
+  connect <number|name>   Connect to SSH host by number or name
+  ping <name>             Ping an SSH host to check availability
+  view <name>             Check configuration of host
+  delete <name>           Delete an SSH host from the configuration
+  add                     Add an SSH host to the configuration
+  help                    Displays help
+  version                 Displays the current version
 EOF
   echo
+  echo "Flags:"
+  cat<<EOF | column -t -s $'\t'
+  -c, --config            Select a specific ssh config file
+EOF
+  echo
+  echo "Environment Variables:"
+  cat<<EOF | column -t -s $'\t'
+  SSHM_CONFIG             Specify the path of an ssh config file"
+EOF
 }
 
 ssh_manager_list() {
-  local config_file=~/.ssh/config
+  local config_file="$1"
   echo -e "\nList of SSH hosts:"
   grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | nl
   
@@ -52,12 +63,12 @@ ssh_manager_list() {
     exit 0
   fi
   
-  ssh_manager_connect "$host"
+  ssh_manager_connect "$config_file" "$host"
 }
 
 ssh_manager_connect() {
-  local config_file=~/.ssh/config
-  local host="$1"
+  local config_file="$1"
+  local host="$2"
   if [[ -z "$host" ]]; then
     echo "Error: please provide a host number or name." 1>&2
     exit 1
@@ -77,8 +88,8 @@ ssh_manager_connect() {
 }
 
 ssh_manager_ping() {
-  local config_file=~/.ssh/config
-  local host="$1"
+  local config_file="$1"
+  local host="$2"
   if [[ -z "$host" ]]; then
     echo "Error: please provide a host name." 1>&2
     exit 1
@@ -99,8 +110,8 @@ ssh_manager_ping() {
 }
 
 ssh_manager_view() {
-  local config_file=~/.ssh/config
-  local host="$1"
+  local config_file="$1"
+  local host="$2"
   if [[ -z "$host" ]]; then
     echo "Error: please provide a host name." 1>&2
     exit 1
@@ -118,8 +129,8 @@ ssh_manager_view() {
 }
 
 ssh_manager_delete() {
-  local config_file=~/.ssh/config
-  local host="$1"
+  local config_file="$1"
+  local host="$2"
   if [[ -z "$host" ]]; then
     echo "Error: please provide a host name." 1>&2
     exit 1
@@ -132,8 +143,8 @@ ssh_manager_delete() {
 }
 
 ssh_manager_add() {
-  local config_file=~/.ssh/config
-  local host="$1"
+  local config_file="$1"
+  local host="$2"
   local hostname
   local user
   local port
@@ -181,8 +192,8 @@ ssh_manager_add() {
 }
 
 ssh_manager_edit() {
-  local config_file=~/.ssh/config
-  local host="$1"
+  local config_file="$1"
+  local host="$2"
   if [[ -z "$host" ]]; then
     echo "Error: please provide a host name." 1>&2
     exit 1
@@ -215,7 +226,7 @@ ssh_manager_edit() {
   new_identity_file=${new_identity_file:-${current_identity_file:-~/.ssh/id_rsa}}
 
   # Delete the old configuration
-  ssh_manager_delete "$host"
+  ssh_manager_delete "$config_file" "$host"
 
   # Add the new configuration
   {
@@ -234,9 +245,22 @@ ssh_manager_edit() {
   echo "Configuration for host $host updated successfully."
 }
 
-
 ssh_manager_main() {
+  local config_file="$CONFIG_FILE"
   local command="$1"
+  shift
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --config|-c)
+        config_file="$2"
+        shift 2
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
 
   if [[ -z $command ]]; then
     ssh_manager_version
@@ -245,28 +269,27 @@ ssh_manager_main() {
     exit 0
   fi
 
-  shift 1
   case "$command" in
     "list")
-      ssh_manager_list
+      ssh_manager_list "$config_file"
       ;;
     "connect")
-      ssh_manager_connect "$@"
+      ssh_manager_connect "$config_file" "$@"
       ;;
     "ping")
-      ssh_manager_ping "$@"
+      ssh_manager_ping "$config_file" "$@"
       ;;
     "view")
-      ssh_manager_view "$@"
+      ssh_manager_view "$config_file" "$@"
       ;;
     "delete")
-      ssh_manager_delete "$@"
+      ssh_manager_delete "$config_file" "$@"
       ;;
     "add")
-      ssh_manager_add "$@"
+      ssh_manager_add "$config_file" "$@"
       ;;
     "edit")
-      ssh_manager_edit "$@"
+      ssh_manager_edit "$config_file" "$@"
       ;;
     "version")
       ssh_manager_version
