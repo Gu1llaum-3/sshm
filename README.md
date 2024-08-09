@@ -1,9 +1,6 @@
-Voici le contenu complet du fichier `README.md` sous format code :
-
-```markdown
 # SSH Manager (sshm)
 
-SSH Manager (sshm) is a bash script that simplifies and automates the management of SSH hosts through the SSH configuration file (`~/.ssh/config`). It provides functionalities to list, connect, view, add, edit, and delete SSH host configurations, as well as to check the availability of hosts using pings.
+SSH Manager (sshm) is a bash script that simplifies and automates the management of SSH hosts through the SSH configuration file (`~/.ssh/config`). It provides functionalities to list, connect, view, add, edit, and delete SSH host configurations, check the availability of hosts using pings, and manage different SSH configuration contexts.
 
 ## Features
 
@@ -14,6 +11,7 @@ SSH Manager (sshm) is a bash script that simplifies and automates the management
 - Edit an existing SSH host configuration.
 - Delete an SSH host configuration.
 - Check the availability of an SSH host using ping.
+- Manage multiple SSH configuration contexts.
 
 ## Requirements
 
@@ -92,6 +90,40 @@ sshm delete <name>
 sshm ping <name>
 ```
 
+### Manage SSH Contexts
+
+#### List Available Contexts
+
+```bash
+sshm context list
+```
+
+This will list all available SSH configuration contexts and highlight the currently active one.
+
+#### Switch to a Different Context
+
+```bash
+sshm context use <context_name>
+```
+
+Switches the active SSH configuration to the specified context.
+
+#### Create a New Context
+
+```bash
+sshm context create <context_name>
+```
+
+Creates a new SSH configuration context.
+
+#### Delete a Context
+
+```bash
+sshm context delete <context_name>
+```
+
+Deletes the specified SSH configuration context.
+
 ## Example
 
 ### Adding a New SSH Host
@@ -126,6 +158,14 @@ sshm view myhost
 ```bash
 sshm ping myhost
 ```
+
+### Switching to a Different SSH Context
+
+```bash
+sshm context use myconfig
+```
+
+Switches to the `myconfig` SSH configuration context.
 
 ## License
 
