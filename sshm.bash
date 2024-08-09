@@ -77,17 +77,18 @@ ssh_manager_connect() {
     echo "Error: please provide a host number or name." 1>&2
     exit 1
   fi
+
   if [[ "$host" =~ ^[0-9]+$ ]]; then
     local host_name
     host_name=$(grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sed -n "${host}p")
     if [ -n "$host_name" ]]; then
-      ssh "$host_name"
+      ssh -F "$config_file" "$host_name"
     else
       echo "Invalid number." 1>&2
       exit 2
     fi
   else
-    ssh "$host"
+    ssh -F "$config_file" "$host"
   fi
 }
 
