@@ -9,24 +9,34 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# Unless required by applicable law ou agreed to in writing, software
+# distributed under the License est distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OU CONDITIONS OF ANY KIND, either express ou implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ###############################################################################
 
 set -eo pipefail; [[ $TRACE ]] && set -x
 
-readonly VERSION="1.0.0"
-CONFIG_FILE=${SSHM_CONFIG:-~/.ssh/config}
+readonly VERSION="2.0.0"
+readonly CONFIG_DIR="${HOME}/.config/sshm"
+readonly DEFAULT_CONFIG="${HOME}/.ssh/config"
+readonly CURRENT_CONTEXT_FILE="${CONFIG_DIR}/.current_context"
+
+mkdir -p "$CONFIG_DIR"
+
+if [[ -f "$CURRENT_CONTEXT_FILE" ]]; then
+  CONFIG_FILE=$(cat "$CURRENT_CONTEXT_FILE")
+else
+  CONFIG_FILE="$DEFAULT_CONFIG"
+fi
 
 ssh_manager_version() {
   echo "ssh_manager $VERSION"
 }
 
 ssh_manager_help() {
-  echo "Usage: ssh_manager command [--config <file>|-c <file>] <command-specific-options>"
+  echo "Usage: ssh_manager command <command-specific-options>"
   echo
   echo "Commands:"
   cat<<EOF | column -t -s $'\t'
@@ -36,23 +46,17 @@ ssh_manager_help() {
   view <name>             Check configuration of host
   delete <name>           Delete an SSH host from the configuration
   add                     Add an SSH host to the configuration
+  context list            List available contexts
+  context use <name>      Use a specific context
+  context create <name>   Create a new context
+  context delete <name>   Delete an existing context
   help                    Displays help
   version                 Displays the current version
-EOF
-  echo
-  echo "Flags:"
-  cat<<EOF | column -t -s $'\t'
-  -c, --config            Select a specific ssh config file
-EOF
-  echo
-  echo "Environment Variables:"
-  cat<<EOF | column -t -s $'\t'
-  SSHM_CONFIG             Specify the path of an ssh config file"
 EOF
 }
 
 ssh_manager_list() {
-  local config_file="$1"
+  local config_file="$CONFIG_FILE"
   echo -e "\nList of SSH hosts:"
   grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | nl
   
@@ -76,7 +80,7 @@ ssh_manager_connect() {
   if [[ "$host" =~ ^[0-9]+$ ]]; then
     local host_name
     host_name=$(grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sed -n "${host}p")
-    if [ -n "$host_name" ]; then
+    if [ -n "$host_name" ]]; then
       ssh "$host_name"
     else
       echo "Invalid number." 1>&2
@@ -245,22 +249,90 @@ ssh_manager_edit() {
   echo "Configuration for host $host updated successfully."
 }
 
+context_list() {
+  local current_context
+  current_context=$(cat "$CURRENT_CONTEXT_FILE" 2>/dev/null || echo "$DEFAULT_CONFIG")
+  
+  echo "Available contexts:"
+  if [[ "$current_context" == "$DEFAULT_CONFIG" ]]; then
+    echo "* default"
+  else
+    echo "  default"
+  fi
+
+  for context in "$CONFIG_DIR"/*; do
+    if [[ -f "$context" ]]; then  # Vérifie que c'est bien un fichier existant
+      local context_name
+      context_name=$(basename "$context")
+      if [[ "$CONFIG_DIR/$context_name" == "$current_context" ]]; then
+        echo "* $context_name"
+      else
+        echo "  $context_name"
+      fi
+    fi
+  done
+}
+
+context_use() {
+  local context="$1"
+  if [[ -z "$context" ]]; then
+    echo "Error: please provide a context name." 1>&2
+    exit 1
+  fi
+
+  if [[ "$context" == "default" ]]; then
+    echo "$DEFAULT_CONFIG" > "$CURRENT_CONTEXT_FILE"
+    echo "Switched to default context."
+  elif [[ ! -f "$CONFIG_DIR/$context" ]]; then
+    echo "Error: context '$context' does not exist." 1>&2
+    exit 1
+  else
+    echo "$CONFIG_DIR/$context" > "$CURRENT_CONTEXT_FILE"
+    echo "Switched to context '$context'."
+  fi
+}
+
+context_create() {
+  local context="$1"
+  if [[ -z "$context" ]]; then
+    echo "Error: please provide a context name." 1>&2
+    exit 1
+  fi
+
+  if [[ -f "$CONFIG_DIR/$context" ]]; then
+    echo "Error: context '$context' already exists." 1>&2
+    exit 1
+  fi
+
+  touch "$CONFIG_DIR/$context"
+  echo "Context '$context' created."
+}
+
+context_delete() {
+  local context="$1"
+  if [[ -z "$context" ]]; then
+    echo "Error: please provide a context name." 1>&2
+    exit 1
+  fi
+
+  if [[ ! -f "$CONFIG_DIR/$context" ]]; then
+    echo "Error: context '$context' does not exist." 1>&2
+    exit 1
+  fi
+
+  rm -f "$CONFIG_DIR/$context"
+  echo "Context '$context' deleted."
+
+  if [[ "$(cat "$CURRENT_CONTEXT_FILE")" == "$CONFIG_DIR/$context" ]]; then
+    echo "$DEFAULT_CONFIG" > "$CURRENT_CONTEXT_FILE"
+    echo "Switched to default context."
+  fi
+}
+
 ssh_manager_main() {
   local config_file="$CONFIG_FILE"
   local command="$1"
   shift
-
-  while [[ "$#" -gt 0 ]]; do
-    case "$1" in
-      --config|-c)
-        config_file="$2"
-        shift 2
-        ;;
-      *)
-        break
-        ;;
-    esac
-  done
 
   if [[ -z $command ]]; then
     ssh_manager_version
@@ -290,6 +362,29 @@ ssh_manager_main() {
       ;;
     "edit")
       ssh_manager_edit "$config_file" "$@"
+      ;;
+    "context")
+      local subcommand="$1"
+      shift
+      case "$subcommand" in
+        "list")
+          context_list "$@"
+          ;;
+        "use")
+          context_use "$@"
+          ;;
+        "create")
+          context_create "$@"
+          ;;
+        "delete")
+          context_delete "$@"
+          ;;
+        *)
+          echo "Error: invalid context subcommand." 1>&2
+          ssh_manager_help
+          exit 3
+          ;;
+      esac
       ;;
     "version")
       ssh_manager_version
