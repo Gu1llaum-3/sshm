@@ -39,7 +39,7 @@ SSH Manager (sshm) is a bash script that simplifies and automates the management
 3. Move the script to a directory in your PATH, for example:
 
    ```bash
-   sudo mv sshm /usr/local/bin/
+   sudo mv sshm.bash /usr/local/bin/sshm
    ```
 
 ## Usage
