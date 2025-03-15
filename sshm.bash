@@ -42,7 +42,6 @@ sshm_help() {
   cat<<EOF | column -t -s $'\t'
   <host>                  Connect directly to SSH host by name
   list                    List SSH hosts and prompt for connection
-  connect <number|name>   Connect to SSH host by number or name
   ping <name>             Ping an SSH host to check availability
   view <name>             Check configuration of host
   delete <name>           Delete an SSH host from the configuration
@@ -355,9 +354,6 @@ sshm_main() {
   case "$command" in
     "list")
       sshm_list "$config_file"
-      ;;
-    "connect")
-      sshm_connect "$config_file" "$@"
       ;;
     "ping")
       sshm_ping "$config_file" "$@"
