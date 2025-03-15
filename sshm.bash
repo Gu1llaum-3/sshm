@@ -31,15 +31,16 @@ else
   CONFIG_FILE="$DEFAULT_CONFIG"
 fi
 
-ssh_manager_version() {
-  echo "ssh_manager $VERSION"
+sshm_version() {
+  echo "sshm $VERSION"
 }
 
-ssh_manager_help() {
-  echo "Usage: ssh_manager command <command-specific-options>"
+sshm_help() {
+  echo "Usage: sshm [command] <command-specific-options>"
   echo
   echo "Commands:"
   cat<<EOF | column -t -s $'\t'
+  <host>                  Connect directly to SSH host by name
   list                    List SSH hosts and prompt for connection
   connect <number|name>   Connect to SSH host by number or name
   ping <name>             Ping an SSH host to check availability
@@ -55,7 +56,7 @@ ssh_manager_help() {
 EOF
 }
 
-ssh_manager_list() {
+sshm_list() {
   local config_file="$CONFIG_FILE"
   echo -e "\nList of SSH hosts:"
   grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | nl
@@ -67,10 +68,10 @@ ssh_manager_list() {
     exit 0
   fi
   
-  ssh_manager_connect "$config_file" "$host"
+  sshm_connect "$config_file" "$host"
 }
 
-ssh_manager_connect() {
+sshm_connect() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
@@ -84,15 +85,22 @@ ssh_manager_connect() {
     if [[ -n "$host_name" ]]; then
       ssh -F "$config_file" "$host_name"
     else
-      echo "Invalid number." 1>&2
+      echo "Error: Invalid host number." 1>&2
       exit 2
     fi
   else
+    # Check if the host exists in the SSH configuration
+    if ! grep -q "^Host $host$" "$config_file"; then
+      echo "Error: Host '$host' not found in SSH configuration." 1>&2
+      echo "Use 'sshm list' to see available hosts or 'sshm add $host' to add it." 1>&2
+      exit 1
+    fi
+    
     ssh -F "$config_file" "$host"
   fi
 }
 
-ssh_manager_ping() {
+sshm_ping() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
@@ -114,7 +122,7 @@ ssh_manager_ping() {
   fi
 }
 
-ssh_manager_view() {
+sshm_view() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
@@ -133,7 +141,7 @@ ssh_manager_view() {
   echo "$host_info"
 }
 
-ssh_manager_delete() {
+sshm_delete() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
@@ -147,7 +155,7 @@ ssh_manager_delete() {
   echo "Host $host removed from SSH configuration."
 }
 
-ssh_manager_add() {
+sshm_add() {
   local config_file="$1"
   local host="$2"
   local hostname
@@ -196,7 +204,7 @@ ssh_manager_add() {
   echo "Configuration for host $host added successfully."
 }
 
-ssh_manager_edit() {
+sshm_edit() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
@@ -231,7 +239,7 @@ ssh_manager_edit() {
   new_identity_file=${new_identity_file:-${current_identity_file:-~/.ssh/id_rsa}}
 
   # Delete the old configuration
-  ssh_manager_delete "$config_file" "$host"
+  sshm_delete "$config_file" "$host"
 
   # Add the new configuration
   {
@@ -331,39 +339,40 @@ context_delete() {
   fi
 }
 
-ssh_manager_main() {
+sshm_main() {
   local config_file="$CONFIG_FILE"
   local command="$1"
   shift
 
   if [[ -z $command ]]; then
-    ssh_manager_version
+    sshm_version
     echo
-    ssh_manager_help
+    sshm_help
     exit 0
   fi
 
+  # Check if command is a known command, otherwise treat it as a host to connect to
   case "$command" in
     "list")
-      ssh_manager_list "$config_file"
+      sshm_list "$config_file"
       ;;
     "connect")
-      ssh_manager_connect "$config_file" "$@"
+      sshm_connect "$config_file" "$@"
       ;;
     "ping")
-      ssh_manager_ping "$config_file" "$@"
+      sshm_ping "$config_file" "$@"
       ;;
     "view")
-      ssh_manager_view "$config_file" "$@"
+      sshm_view "$config_file" "$@"
       ;;
     "delete")
-      ssh_manager_delete "$config_file" "$@"
+      sshm_delete "$config_file" "$@"
       ;;
     "add")
-      ssh_manager_add "$config_file" "$@"
+      sshm_add "$config_file" "$@"
       ;;
     "edit")
-      ssh_manager_edit "$config_file" "$@"
+      sshm_edit "$config_file" "$@"
       ;;
     "context")
       local subcommand="$1"
@@ -383,23 +392,30 @@ ssh_manager_main() {
           ;;
         *)
           echo "Error: invalid context subcommand." 1>&2
-          ssh_manager_help
+          sshm_help
           exit 3
           ;;
       esac
       ;;
     "version")
-      ssh_manager_version
+      sshm_version
       ;;
     "help")
-      ssh_manager_help
+      sshm_help
       ;;
     *)
-      ssh_manager_help 1>&2
-      exit 3
+      # If command is not recognized, treat it as a host name to connect to
+      sshm_connect "$config_file" "$command"
   esac
 }
 
 if [[ "$0" == "$BASH_SOURCE" ]]; then
-  ssh_manager_main "$@"
+  # If no arguments are provided, display help
+  if [[ $# -eq 0 ]]; then
+    sshm_version
+    echo
+    sshm_help
+  else
+    sshm_main "$@"
+  fi
 fi
