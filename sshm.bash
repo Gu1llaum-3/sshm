@@ -52,6 +52,7 @@ sshm_version() {
   else
     echo "This is the latest version"
   fi
+}
 
 sshm_help() {
   echo "Usage: sshm [command] <command-specific-options>"
