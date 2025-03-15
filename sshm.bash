@@ -162,7 +162,9 @@ sshm_add() {
   local port
   local identity_file
 
-  # Request necessary information
+  default_identity_file=$(find ~/.ssh -maxdepth 1 -type f \( -name "id_rsa" -o -name "id_ed25519" -o -name "id_ecdsa" -o -name "id_dsa" \) | head -n 1)
+  default_identity_file=${default_identity_file:-~/.ssh/id_rsa}
+
   if [[ -z "$host" ]]; then
     read -p "Enter host name: " host
     if [[ -z "$host" ]]; then
@@ -183,10 +185,9 @@ sshm_add() {
   read -p "Enter SSH port (default: 22): " port
   port=${port:-22}
 
-  read -p "Enter path to SSH key (default: ~/.ssh/id_rsa): " identity_file
-  identity_file=${identity_file:-~/.ssh/id_rsa}
+  read -p "Enter path to SSH key (default: $default_identity_file): " identity_file
+  identity_file=${identity_file:-$default_identity_file}
 
-  # Add the new configuration to the file
   {
     echo ""
     echo "Host $host"
@@ -195,7 +196,7 @@ sshm_add() {
     if [[ "$port" -ne 22 ]]; then
       echo "    Port $port"
     fi
-    if [[ "$identity_file" != ~/.ssh/id_rsa ]]; then
+    if [[ "$identity_file" != "$default_identity_file" ]]; then
       echo "    IdentityFile $identity_file"
     fi
   } >> "$config_file"
