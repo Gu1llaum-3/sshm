@@ -22,6 +22,7 @@ readonly VERSION="2.0.0"
 readonly CONFIG_DIR="${HOME}/.config/sshm"
 readonly DEFAULT_CONFIG="${HOME}/.ssh/config"
 readonly CURRENT_CONTEXT_FILE="${CONFIG_DIR}/.current_context"
+readonly GITHUB_REPO="Gu1llaum-3/sshm"
 
 mkdir -p "$CONFIG_DIR"
 
@@ -33,7 +34,24 @@ fi
 
 sshm_version() {
   echo "sshm $VERSION"
-}
+
+  # Fetch the latest release tag from GitHub
+  local latest_version
+  latest_version=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | jq -r .tag_name)
+  
+  if [[ "$latest_version" == "null" ]]; then
+    echo "sshm $VERSION"
+    echo "Error: Unable to fetch the latest release from GitHub." 1>&2
+    exit 1
+  fi
+
+  # Compare with the current version
+  if [[ "$latest_version" != "$VERSION" ]]; then
+    echo "A new version of sshm is available: $latest_version (current: $VERSION)"
+    echo "You can update by running: git pull origin main"
+  else
+    echo "This is the latest version"
+  fi
 
 sshm_help() {
   echo "Usage: sshm [command] <command-specific-options>"
