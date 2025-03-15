@@ -306,6 +306,7 @@ context_create() {
   fi
 
   touch "$CONFIG_DIR/$context"
+  chmod 600 "$CONFIG_DIR/$context"
   echo "Context '$context' created."
 }
 
