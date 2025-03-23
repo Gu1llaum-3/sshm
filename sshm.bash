@@ -162,15 +162,21 @@ sshm_view() {
 sshm_delete() {
   local config_file="$1"
   local host="$2"
+  local silent="${3:-false}"
+
   if [[ -z "$host" ]]; then
     echo "Error: please provide a host name." 1>&2
     exit 1
   fi
 
-  local tmp_file=$(mktemp)
+  local tmp_file
+  tmp_file=$(mktemp)
   sed '/^Host '"$host"'$/,/^$/d' "$config_file" > "$tmp_file"
   mv "$tmp_file" "$config_file"
-  echo "Host $host removed from SSH configuration."
+
+  if [[ "$silent" != "true" ]]; then
+    echo "Host $host removed from SSH configuration."
+  fi
 }
 
 sshm_add() {
@@ -180,6 +186,7 @@ sshm_add() {
   local user
   local port
   local identity_file
+  local proxy_jump
 
   default_identity_file=$(find ~/.ssh -maxdepth 1 -type f \( -name "id_rsa" -o -name "id_ed25519" -o -name "id_ecdsa" -o -name "id_dsa" \) | head -n 1)
   default_identity_file=${default_identity_file:-~/.ssh/id_rsa}
@@ -207,6 +214,8 @@ sshm_add() {
   read -p "Enter path to SSH key (default: $default_identity_file): " identity_file
   identity_file=${identity_file:-$default_identity_file}
 
+  read -p "Enter ProxyJump host (optional): " proxy_jump
+
   {
     echo ""
     echo "Host $host"
@@ -217,6 +226,9 @@ sshm_add() {
     fi
     if [[ "$identity_file" != "$default_identity_file" ]]; then
       echo "    IdentityFile $identity_file"
+    fi
+    if [[ -n "$proxy_jump" ]]; then
+      echo "    ProxyJump $proxy_jump"
     fi
   } >> "$config_file"
 
@@ -238,11 +250,15 @@ sshm_edit() {
     exit 1
   fi
 
+  default_identity_file=$(find ~/.ssh -maxdepth 1 -type f \( -name "id_rsa" -o -name "id_ed25519" -o -name "id_ecdsa" -o -name "id_dsa" \) | head -n 1)
+  default_identity_file=${default_identity_file:-~/.ssh/id_rsa}
+
   # Extract current values
   local current_hostname=$(echo "$host_info" | awk '/HostName/ {print $2}')
   local current_user=$(echo "$host_info" | awk '/User/ {print $2}')
   local current_port=$(echo "$host_info" | awk '/Port/ {print $2}')
   local current_identity_file=$(echo "$host_info" | awk '/IdentityFile/ {print $2}')
+  local current_proxyjump=$(echo "$host_info" | awk '/ProxyJump/ {print $2}')
 
   # Prompt for new values, defaulting to current values if no input is given
   read -p "HostName [$current_hostname]: " new_hostname
@@ -254,11 +270,18 @@ sshm_edit() {
   read -p "Port [${current_port:-22}]: " new_port
   new_port=${new_port:-${current_port:-22}}
 
-  read -p "IdentityFile [${current_identity_file:-~/.ssh/id_rsa}]: " new_identity_file
-  new_identity_file=${new_identity_file:-${current_identity_file:-~/.ssh/id_rsa}}
+  read -p "IdentityFile [${current_identity_file:-$default_identity_file}]: " new_identity_file
+  new_identity_file=${new_identity_file:-${current_identity_file:-$default_identity_file}}
 
+  if [[ -n "$current_proxyjump" ]]; then
+    read -p "ProxyJump [$current_proxyjump]: " new_proxyjump
+    new_proxyjump=${new_proxyjump:-$current_proxyjump}
+  else
+    read -p "ProxyJump (leave empty if none): " new_proxyjump
+  fi
+  
   # Delete the old configuration
-  sshm_delete "$config_file" "$host"
+  sshm_delete "$config_file" "$host" true
 
   # Add the new configuration
   {
@@ -269,8 +292,11 @@ sshm_edit() {
     if [[ "$new_port" -ne 22 ]]; then
       echo "    Port $new_port"
     fi
-    if [[ "$new_identity_file" != ~/.ssh/id_rsa ]]; then
+    if [[ "$new_identity_file" != "$default_identity_file" ]]; then
       echo "    IdentityFile $new_identity_file"
+    fi
+    if [[ -n "$new_proxyjump" ]]; then
+      echo "    ProxyJump $new_proxyjump"
     fi
   } >> "$config_file"
 
