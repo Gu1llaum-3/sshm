@@ -26,11 +26,16 @@ readonly GITHUB_REPO="Gu1llaum-3/sshm"
 
 mkdir -p "$CONFIG_DIR"
 
-if [[ -f "$CURRENT_CONTEXT_FILE" ]]; then
-  CONFIG_FILE=$(cat "$CURRENT_CONTEXT_FILE")
-else
-  CONFIG_FILE="$DEFAULT_CONFIG"
+# Initialize SSHM_CONTEXT from file or default if not already set
+if [[ -z "${SSHM_CONTEXT:-}" ]]; then
+    if [[ -f "$CURRENT_CONTEXT_FILE" ]]; then
+        export SSHM_CONTEXT=$(cat "$CURRENT_CONTEXT_FILE")
+    else
+        export SSHM_CONTEXT="$DEFAULT_CONFIG"
+    fi
 fi
+
+CONFIG_FILE="$SSHM_CONTEXT"
 
 sshm_version() {
   echo "sshm $VERSION"
@@ -76,6 +81,21 @@ EOF
 
 sshm_list() {
   local config_file="$CONFIG_FILE"
+  
+  # Check if the file exists and is not empty
+  if [[ ! -s "$config_file" ]]; then
+    echo -e "\nNo SSH hosts configured in current context."
+    echo "Use 'sshm add' to add a new host configuration."
+    exit 0
+  fi
+
+  # Check if there are any Host entries
+  if ! grep -q "^Host " "$config_file"; then
+    echo -e "\nNo SSH hosts configured in current context."
+    echo "Use 'sshm add' to add a new host configuration."
+    exit 0
+  fi
+
   echo -e "\nList of SSH hosts:"
   grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | nl
   
@@ -169,10 +189,24 @@ sshm_delete() {
     exit 1
   fi
 
+  # Create a backup of the original file
+  cp "$config_file" "$config_file.bak"
+
+  # Create a temporary file for the new content
   local tmp_file
   tmp_file=$(mktemp)
   sed '/^Host '"$host"'$/,/^$/d' "$config_file" > "$tmp_file"
-  mv "$tmp_file" "$config_file"
+
+  # Check if the temporary file is not empty before overwriting
+  if [[ -s "$tmp_file" ]]; then
+    mv "$tmp_file" "$config_file"
+    rm -f "$config_file.bak"
+  else
+    mv "$config_file.bak" "$config_file"
+    rm -f "$tmp_file"
+    echo "Error: Operation would result in empty file. Operation cancelled." 1>&2
+    exit 1
+  fi
 
   if [[ "$silent" != "true" ]]; then
     echo "Host $host removed from SSH configuration."
@@ -180,8 +214,8 @@ sshm_delete() {
 }
 
 sshm_add() {
-  local config_file="$1"
-  local host="$2"
+  local config_file="$CONFIG_FILE"
+  local host="$1"
   local hostname
   local user
   local port
@@ -197,6 +231,13 @@ sshm_add() {
       echo "Error: host name cannot be empty." 1>&2
       exit 1
     fi
+  fi
+
+  # Vérifier si le host existe déjà
+  if grep -q "^Host $host$" "$config_file" 2>/dev/null; then
+    echo "Error: Host '$host' already exists in configuration." 1>&2
+    echo "Use 'sshm edit $host' to modify the existing configuration or choose a different name." 1>&2
+    exit 1
   fi
 
   read -p "Enter HostName (IP address or domain): " hostname
@@ -215,6 +256,9 @@ sshm_add() {
   identity_file=${identity_file:-$default_identity_file}
 
   read -p "Enter ProxyJump host (optional): " proxy_jump
+
+  # Create the file if it doesn't exist
+  touch "$config_file"
 
   {
     echo ""
@@ -236,8 +280,8 @@ sshm_add() {
 }
 
 sshm_edit() {
-  local config_file="$1"
-  local host="$2"
+  local config_file="$CONFIG_FILE"
+  local host="$1"
   if [[ -z "$host" ]]; then
     echo "Error: please provide a host name." 1>&2
     exit 1
@@ -260,6 +304,9 @@ sshm_edit() {
   local current_identity_file=$(echo "$host_info" | awk '/IdentityFile/ {print $2}')
   local current_proxyjump=$(echo "$host_info" | awk '/ProxyJump/ {print $2}')
 
+  # Create backup of the original file
+  cp "$config_file" "$config_file.bak"
+
   # Prompt for new values, defaulting to current values if no input is given
   read -p "HostName [$current_hostname]: " new_hostname
   new_hostname=${new_hostname:-$current_hostname}
@@ -280,8 +327,20 @@ sshm_edit() {
     read -p "ProxyJump (leave empty if none): " new_proxyjump
   fi
   
+  # Create a temporary file for the new content
+  local tmp_file
+  tmp_file=$(mktemp)
+  
   # Delete the old configuration
-  sshm_delete "$config_file" "$host" true
+  sed '/^Host '"$host"'$/,/^$/d' "$config_file" > "$tmp_file"
+
+  # Check if the temporary file is not empty
+  if [[ ! -s "$tmp_file" ]]; then
+    mv "$config_file.bak" "$config_file"
+    rm -f "$tmp_file"
+    echo "Error: Operation would result in empty file. Operation cancelled." 1>&2
+    exit 1
+  fi
 
   # Add the new configuration
   {
@@ -298,27 +357,28 @@ sshm_edit() {
     if [[ -n "$new_proxyjump" ]]; then
       echo "    ProxyJump $new_proxyjump"
     fi
-  } >> "$config_file"
+  } >> "$tmp_file"
+
+  # Move the temporary file to the final location
+  mv "$tmp_file" "$config_file"
+  rm -f "$config_file.bak"
 
   echo "Configuration for host $host updated successfully."
 }
 
 context_list() {
-  local current_context
-  current_context=$(cat "$CURRENT_CONTEXT_FILE" 2>/dev/null || echo "$DEFAULT_CONFIG")
-  
   echo "Available contexts:"
-  if [[ "$current_context" == "$DEFAULT_CONFIG" ]]; then
+  if [[ "$SSHM_CONTEXT" == "$DEFAULT_CONFIG" ]]; then
     echo "* default"
   else
     echo "  default"
   fi
 
   for context in "$CONFIG_DIR"/*; do
-    if [[ -f "$context" ]]; then  # Vérifie que c'est bien un fichier existant
+    if [[ -f "$context" ]]; then
       local context_name
       context_name=$(basename "$context")
-      if [[ "$CONFIG_DIR/$context_name" == "$current_context" ]]; then
+      if [[ "$CONFIG_DIR/$context_name" == "$SSHM_CONTEXT" ]]; then
         echo "* $context_name"
       else
         echo "  $context_name"
@@ -335,15 +395,20 @@ context_use() {
   fi
 
   if [[ "$context" == "default" ]]; then
-    echo "$DEFAULT_CONFIG" > "$CURRENT_CONTEXT_FILE"
-    echo "Switched to default context."
+    export SSHM_CONTEXT="$DEFAULT_CONFIG"
   elif [[ ! -f "$CONFIG_DIR/$context" ]]; then
     echo "Error: context '$context' does not exist." 1>&2
     exit 1
   else
-    echo "$CONFIG_DIR/$context" > "$CURRENT_CONTEXT_FILE"
-    echo "Switched to context '$context'."
+    export SSHM_CONTEXT="$CONFIG_DIR/$context"
   fi
+
+  # Update the file for persistence between sessions
+  echo "$SSHM_CONTEXT" > "$CURRENT_CONTEXT_FILE"
+  echo "Switched to context '$context'."
+  
+  # Update CONFIG_FILE for the current session
+  CONFIG_FILE="$SSHM_CONTEXT"
 }
 
 context_create() {
@@ -378,14 +443,16 @@ context_delete() {
   rm -f "$CONFIG_DIR/$context"
   echo "Context '$context' deleted."
 
-  if [[ "$(cat "$CURRENT_CONTEXT_FILE")" == "$CONFIG_DIR/$context" ]]; then
-    echo "$DEFAULT_CONFIG" > "$CURRENT_CONTEXT_FILE"
+  # If the deleted context was the current one, switch to default
+  if [[ "$SSHM_CONTEXT" == "$CONFIG_DIR/$context" ]]; then
+    export SSHM_CONTEXT="$DEFAULT_CONFIG"
+    echo "$SSHM_CONTEXT" > "$CURRENT_CONTEXT_FILE"
+    CONFIG_FILE="$SSHM_CONTEXT"
     echo "Switched to default context."
   fi
 }
 
 sshm_main() {
-  local config_file="$CONFIG_FILE"
   local command="$1"
   shift
 
@@ -399,22 +466,22 @@ sshm_main() {
   # Check if command is a known command, otherwise treat it as a host to connect to
   case "$command" in
     "list")
-      sshm_list "$config_file"
+      sshm_list
       ;;
     "ping")
-      sshm_ping "$config_file" "$@"
+      sshm_ping "$CONFIG_FILE" "$@"
       ;;
     "view")
-      sshm_view "$config_file" "$@"
+      sshm_view "$CONFIG_FILE" "$@"
       ;;
     "delete")
-      sshm_delete "$config_file" "$@"
+      sshm_delete "$CONFIG_FILE" "$@"
       ;;
     "add")
-      sshm_add "$config_file" "$@"
+      sshm_add "$@"
       ;;
     "edit")
-      sshm_edit "$config_file" "$@"
+      sshm_edit "$@"
       ;;
     "context")
       local subcommand="$1"
@@ -447,7 +514,7 @@ sshm_main() {
       ;;
     *)
       # If command is not recognized, treat it as a host name to connect to
-      sshm_connect "$config_file" "$command"
+      sshm_connect "$CONFIG_FILE" "$command"
   esac
 }
 
