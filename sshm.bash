@@ -18,6 +18,14 @@
 
 set -eo pipefail; [[ $TRACE ]] && set -x
 
+# Colors and formatting
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m' # No Color
+
 readonly VERSION="2.1.0"
 readonly CONFIG_DIR="${HOME}/.config/sshm"
 readonly DEFAULT_CONFIG="${HOME}/.ssh/config"
@@ -38,31 +46,31 @@ fi
 CONFIG_FILE="$SSHM_CONTEXT"
 
 sshm_version() {
-  echo "sshm $VERSION"
+  echo -e "${BLUE}${BOLD}sshm $VERSION${NC}"
+  echo
 
   # Fetch the latest release tag from GitHub
   local latest_version
   latest_version=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | jq -r .tag_name)
   
   if [[ "$latest_version" == "null" ]]; then
-    echo "sshm $VERSION"
-    echo "Error: Unable to fetch the latest release from GitHub." 1>&2
+    echo -e "${RED}Error: Unable to fetch the latest release from GitHub.${NC}" 1>&2
     exit 1
   fi
 
   # Compare with the current version
   if [[ "$latest_version" != "$VERSION" ]]; then
-    echo "A new version of sshm is available: $latest_version (current: $VERSION)"
-    echo "You can update by running: git pull origin main"
+    echo -e "${YELLOW}A new version of sshm is available: $latest_version${NC} (current: $VERSION)"
+    echo -e "You can update by running: ${BOLD}git pull origin main${NC}"
   else
-    echo "This is the latest version"
+    echo -e "${GREEN}This is the latest version${NC}"
   fi
 }
 
 sshm_help() {
-  echo "Usage: sshm [command] <command-specific-options>"
+  echo -e "${BLUE}${BOLD}Usage:${NC} sshm [command] <command-specific-options>"
   echo
-  echo "Commands:"
+  echo -e "${BLUE}${BOLD}Commands:${NC}"
   cat<<EOF | column -t -s $'\t'
   <host>                  Connect directly to SSH host by name
   list                    List SSH hosts and prompt for connection
@@ -84,22 +92,22 @@ sshm_list() {
   
   # Check if the file exists and is not empty
   if [[ ! -s "$config_file" ]]; then
-    echo -e "\nNo SSH hosts configured in current context."
-    echo "Use 'sshm add' to add a new host configuration."
+    echo -e "\n${YELLOW}No SSH hosts configured in current context.${NC}"
+    echo -e "Use ${BOLD}sshm add${NC} to add a new host configuration."
     exit 0
   fi
 
   # Check if there are any Host entries
   if ! grep -q "^Host " "$config_file"; then
-    echo -e "\nNo SSH hosts configured in current context."
-    echo "Use 'sshm add' to add a new host configuration."
+    echo -e "\n${YELLOW}No SSH hosts configured in current context.${NC}"
+    echo -e "Use ${BOLD}sshm add${NC} to add a new host configuration."
     exit 0
   fi
 
-  echo -e "\nList of SSH hosts:"
+  echo -e "\n${BLUE}${BOLD}List of SSH hosts:${NC}"
   grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | nl
   
-  echo -ne "\nEnter the number or name of the host (or press Enter to exit): "
+  echo -ne "\n${BOLD}Enter the number or name of the host (or press Enter to exit):${NC} "
   read host
   if [[ -z "$host" ]]; then
     echo "No host specified, exiting."
@@ -113,7 +121,7 @@ sshm_connect() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
-    echo "Error: please provide a host number or name." 1>&2
+    echo -e "${RED}Error: please provide a host number or name.${NC}" 1>&2
     exit 1
   fi
 
@@ -121,19 +129,21 @@ sshm_connect() {
     local host_name
     host_name=$(grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sed -n "${host}p")
     if [[ -n "$host_name" ]]; then
+      echo -e "\n${GREEN}Connecting to $host_name...${NC}\n"
       ssh -F "$config_file" "$host_name"
     else
-      echo "Error: Invalid host number." 1>&2
+      echo -e "${RED}Error: Invalid host number.${NC}" 1>&2
       exit 2
     fi
   else
     # Check if the host exists in the SSH configuration
     if ! grep -q "^Host $host$" "$config_file"; then
-      echo "Error: Host '$host' not found in SSH configuration." 1>&2
-      echo "Use 'sshm list' to see available hosts or 'sshm add $host' to add it." 1>&2
+      echo -e "${RED}Error: Host '$host' not found in SSH configuration.${NC}" 1>&2
+      echo -e "Use ${BOLD}sshm list${NC} to see available hosts or ${BOLD}sshm add $host${NC} to add it." 1>&2
       exit 1
     fi
     
+    echo -e "\n${GREEN}Connecting to $host...${NC}\n"
     ssh -F "$config_file" "$host"
   fi
 }
@@ -142,21 +152,22 @@ sshm_ping() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
-    echo "Error: please provide a host name." 1>&2
+    echo -e "${RED}Error: please provide a host name.${NC}" 1>&2
     exit 1
   fi
 
   local hostname
   hostname=$(awk '/^Host '"$host"'$/,/^$/' "$config_file" | awk '/HostName/ {print $2}')
   if [[ -z "$hostname" ]]; then
-    echo "Error: HostName not found for host $host in SSH configuration." 1>&2
+    echo -e "${RED}Error: HostName not found for host $host in SSH configuration.${NC}" 1>&2
     exit 1
   fi
 
+  echo -e "\n${BLUE}Pinging $host ($hostname)...${NC}"
   if ping -c 1 -W 1 "$hostname" &> /dev/null; then
-    echo -e "\033[32m$host ($hostname) is available\033[0m"
+    echo -e "${GREEN}✓ $host ($hostname) is available${NC}"
   else
-    echo -e "\033[31m$host ($hostname) is unavailable\033[0m"
+    echo -e "${RED}✗ $host ($hostname) is unavailable${NC}"
   fi
 }
 
@@ -164,18 +175,18 @@ sshm_view() {
   local config_file="$1"
   local host="$2"
   if [[ -z "$host" ]]; then
-    echo "Error: please provide a host name." 1>&2
+    echo -e "${RED}Error: please provide a host name.${NC}" 1>&2
     exit 1
   fi
 
   local host_info
   host_info=$(awk '/^Host '"$host"'$/,/^$/' "$config_file")
   if [[ -z "$host_info" ]]; then
-    echo "Error: host not found in SSH configuration." 1>&2
+    echo -e "${RED}Error: host not found in SSH configuration.${NC}" 1>&2
     exit 1
   fi
 
-  echo -e "\nInformation for host $host:\n"
+  echo -e "\n${BLUE}${BOLD}Information for host $host:${NC}\n"
   echo "$host_info"
 }
 
@@ -185,7 +196,7 @@ sshm_delete() {
   local silent="${3:-false}"
 
   if [[ -z "$host" ]]; then
-    echo "Error: please provide a host name." 1>&2
+    echo -e "${RED}Error: please provide a host name.${NC}" 1>&2
     exit 1
   fi
 
@@ -204,12 +215,12 @@ sshm_delete() {
   else
     mv "$config_file.bak" "$config_file"
     rm -f "$tmp_file"
-    echo "Error: Operation would result in empty file. Operation cancelled." 1>&2
+    echo -e "${RED}Error: Operation would result in empty file. Operation cancelled.${NC}" 1>&2
     exit 1
   fi
 
   if [[ "$silent" != "true" ]]; then
-    echo "Host $host removed from SSH configuration."
+    echo -e "${GREEN}Host $host removed from SSH configuration.${NC}"
   fi
 }
 
@@ -225,24 +236,26 @@ sshm_add() {
   default_identity_file=$(find ~/.ssh -maxdepth 1 -type f \( -name "id_rsa" -o -name "id_ed25519" -o -name "id_ecdsa" -o -name "id_dsa" \) | head -n 1)
   default_identity_file=${default_identity_file:-~/.ssh/id_rsa}
 
+  echo -e "\n${BLUE}${BOLD}Adding new SSH host configuration${NC}\n"
+
   if [[ -z "$host" ]]; then
     read -p "Enter host name: " host
     if [[ -z "$host" ]]; then
-      echo "Error: host name cannot be empty." 1>&2
+      echo -e "${RED}Error: host name cannot be empty.${NC}" 1>&2
       exit 1
     fi
   fi
 
   # Vérifier si le host existe déjà
   if grep -q "^Host $host$" "$config_file" 2>/dev/null; then
-    echo "Error: Host '$host' already exists in configuration." 1>&2
-    echo "Use 'sshm edit $host' to modify the existing configuration or choose a different name." 1>&2
+    echo -e "${RED}Error: Host '$host' already exists in configuration.${NC}" 1>&2
+    echo -e "Use ${BOLD}sshm edit $host${NC} to modify the existing configuration or choose a different name." 1>&2
     exit 1
   fi
 
   read -p "Enter HostName (IP address or domain): " hostname
   if [[ -z "$hostname" ]]; then
-    echo "Error: HostName cannot be empty." 1>&2
+    echo -e "${RED}Error: HostName cannot be empty.${NC}" 1>&2
     exit 1
   fi
 
@@ -260,6 +273,7 @@ sshm_add() {
   # Create the file if it doesn't exist
   touch "$config_file"
 
+  # Add the new configuration
   {
     echo ""
     echo "Host $host"
@@ -276,23 +290,26 @@ sshm_add() {
     fi
   } >> "$config_file"
 
-  echo "Configuration for host $host added successfully."
+  echo -e "\n${GREEN}✓ Configuration for host $host added successfully.${NC}"
+  echo -e "You can now connect using: ${BOLD}sshm $host${NC}"
 }
 
 sshm_edit() {
   local config_file="$CONFIG_FILE"
   local host="$1"
   if [[ -z "$host" ]]; then
-    echo "Error: please provide a host name." 1>&2
+    echo -e "${RED}Error: please provide a host name.${NC}" 1>&2
     exit 1
   fi
 
   local host_info
   host_info=$(awk '/^Host '"$host"'$/,/^$/' "$config_file")
   if [[ -z "$host_info" ]]; then
-    echo "Error: host not found in SSH configuration." 1>&2
+    echo -e "${RED}Error: host not found in SSH configuration.${NC}" 1>&2
     exit 1
   fi
+
+  echo -e "\n${BLUE}${BOLD}Editing configuration for host $host${NC}\n"
 
   default_identity_file=$(find ~/.ssh -maxdepth 1 -type f \( -name "id_rsa" -o -name "id_ed25519" -o -name "id_ecdsa" -o -name "id_dsa" \) | head -n 1)
   default_identity_file=${default_identity_file:-~/.ssh/id_rsa}
@@ -338,7 +355,7 @@ sshm_edit() {
   if [[ ! -s "$tmp_file" ]]; then
     mv "$config_file.bak" "$config_file"
     rm -f "$tmp_file"
-    echo "Error: Operation would result in empty file. Operation cancelled." 1>&2
+    echo -e "${RED}Error: Operation would result in empty file. Operation cancelled.${NC}" 1>&2
     exit 1
   fi
 
@@ -363,13 +380,13 @@ sshm_edit() {
   mv "$tmp_file" "$config_file"
   rm -f "$config_file.bak"
 
-  echo "Configuration for host $host updated successfully."
+  echo -e "\n${GREEN}✓ Configuration for host $host updated successfully.${NC}"
 }
 
 context_list() {
-  echo "Available contexts:"
+  echo -e "\n${BLUE}${BOLD}Available contexts:${NC}"
   if [[ "$SSHM_CONTEXT" == "$DEFAULT_CONFIG" ]]; then
-    echo "* default"
+    echo -e "${GREEN}* default${NC}"
   else
     echo "  default"
   fi
@@ -379,7 +396,7 @@ context_list() {
       local context_name
       context_name=$(basename "$context")
       if [[ "$CONFIG_DIR/$context_name" == "$SSHM_CONTEXT" ]]; then
-        echo "* $context_name"
+        echo -e "${GREEN}* $context_name${NC}"
       else
         echo "  $context_name"
       fi
@@ -390,14 +407,14 @@ context_list() {
 context_use() {
   local context="$1"
   if [[ -z "$context" ]]; then
-    echo "Error: please provide a context name." 1>&2
+    echo -e "${RED}Error: please provide a context name.${NC}" 1>&2
     exit 1
   fi
 
   if [[ "$context" == "default" ]]; then
     export SSHM_CONTEXT="$DEFAULT_CONFIG"
   elif [[ ! -f "$CONFIG_DIR/$context" ]]; then
-    echo "Error: context '$context' does not exist." 1>&2
+    echo -e "${RED}Error: context '$context' does not exist.${NC}" 1>&2
     exit 1
   else
     export SSHM_CONTEXT="$CONFIG_DIR/$context"
@@ -405,7 +422,7 @@ context_use() {
 
   # Update the file for persistence between sessions
   echo "$SSHM_CONTEXT" > "$CURRENT_CONTEXT_FILE"
-  echo "Switched to context '$context'."
+  echo -e "${GREEN}✓ Switched to context '$context'.${NC}"
   
   # Update CONFIG_FILE for the current session
   CONFIG_FILE="$SSHM_CONTEXT"
@@ -414,41 +431,41 @@ context_use() {
 context_create() {
   local context="$1"
   if [[ -z "$context" ]]; then
-    echo "Error: please provide a context name." 1>&2
+    echo -e "${RED}Error: please provide a context name.${NC}" 1>&2
     exit 1
   fi
 
   if [[ -f "$CONFIG_DIR/$context" ]]; then
-    echo "Error: context '$context' already exists." 1>&2
+    echo -e "${RED}Error: context '$context' already exists.${NC}" 1>&2
     exit 1
   fi
 
   touch "$CONFIG_DIR/$context"
   chmod 600 "$CONFIG_DIR/$context"
-  echo "Context '$context' created."
+  echo -e "${GREEN}✓ Context '$context' created.${NC}"
 }
 
 context_delete() {
   local context="$1"
   if [[ -z "$context" ]]; then
-    echo "Error: please provide a context name." 1>&2
+    echo -e "${RED}Error: please provide a context name.${NC}" 1>&2
     exit 1
   fi
 
   if [[ ! -f "$CONFIG_DIR/$context" ]]; then
-    echo "Error: context '$context' does not exist." 1>&2
+    echo -e "${RED}Error: context '$context' does not exist.${NC}" 1>&2
     exit 1
   fi
 
   rm -f "$CONFIG_DIR/$context"
-  echo "Context '$context' deleted."
+  echo -e "${GREEN}✓ Context '$context' deleted.${NC}"
 
   # If the deleted context was the current one, switch to default
   if [[ "$SSHM_CONTEXT" == "$CONFIG_DIR/$context" ]]; then
     export SSHM_CONTEXT="$DEFAULT_CONFIG"
     echo "$SSHM_CONTEXT" > "$CURRENT_CONTEXT_FILE"
     CONFIG_FILE="$SSHM_CONTEXT"
-    echo "Switched to default context."
+    echo -e "${YELLOW}Switched to default context.${NC}"
   fi
 }
 
@@ -500,7 +517,8 @@ sshm_main() {
           context_delete "$@"
           ;;
         *)
-          echo "Error: invalid context subcommand." 1>&2
+          echo -e "${RED}Error: invalid context subcommand.${NC}" 1>&2
+          echo
           sshm_help
           exit 3
           ;;
