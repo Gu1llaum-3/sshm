@@ -105,7 +105,31 @@ sshm_list() {
   fi
 
   echo -e "\n${BLUE}${BOLD}List of SSH hosts:${NC}"
-  grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | nl
+  
+  # Create a temporary file to store results
+  local tmp_file
+  tmp_file=$(mktemp)
+  
+  # Process each host
+  while IFS= read -r line; do
+    host=$(echo "$line" | awk '{print $2}')
+    hostname=$(awk '/^Host '"$host"'$/,/^$/' "$config_file" | awk '/HostName/ {print $2}')
+    
+    # Skip if no hostname found
+    if [[ -z "$hostname" ]]; then
+      continue
+    fi
+
+    if ping -c 1 -W 1 "$hostname" &> /dev/null; then
+      echo -e "${GREEN}✓${NC} $host ($hostname)" >> "$tmp_file"
+    else
+      echo -e "${RED}✗${NC} $host ($hostname)" >> "$tmp_file"
+    fi
+  done < <(grep -E '^Host ' "$config_file" | grep -v '^#' | sort)
+
+  # Display numbered results
+  nl "$tmp_file"
+  rm -f "$tmp_file"
   
   echo -ne "\n${BOLD}Enter the number or name of the host (or press Enter to exit):${NC} "
   read host
@@ -338,8 +362,12 @@ sshm_edit() {
   new_identity_file=${new_identity_file:-${current_identity_file:-$default_identity_file}}
 
   if [[ -n "$current_proxyjump" ]]; then
-    read -p "ProxyJump [$current_proxyjump]: " new_proxyjump
-    new_proxyjump=${new_proxyjump:-$current_proxyjump}
+    read -p "ProxyJump [$current_proxyjump] (enter 'none' to remove): " new_proxyjump
+    if [[ "$new_proxyjump" == "None" || "$new_proxyjump" == "none" ]]; then
+      new_proxyjump=""
+    else
+      new_proxyjump=${new_proxyjump:-$current_proxyjump}
+    fi
   else
     read -p "ProxyJump (leave empty if none): " new_proxyjump
   fi
@@ -359,7 +387,7 @@ sshm_edit() {
     exit 1
   fi
 
-  # Add the new configuration
+    # Add the new configuration
   {
     echo ""
     echo "Host $host"
@@ -371,7 +399,7 @@ sshm_edit() {
     if [[ "$new_identity_file" != "$default_identity_file" ]]; then
       echo "    IdentityFile $new_identity_file"
     fi
-    if [[ -n "$new_proxyjump" ]]; then
+    if [[ -n "$new_proxyjump" && "$new_proxyjump" != "None" && "$new_proxyjump" != "none" ]]; then
       echo "    ProxyJump $new_proxyjump"
     fi
   } >> "$tmp_file"
