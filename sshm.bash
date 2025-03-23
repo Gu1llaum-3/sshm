@@ -104,6 +104,12 @@ sshm_list() {
     exit 0
   fi
 
+  # Display context name if not default
+  if [[ "$SSHM_CONTEXT" != "$DEFAULT_CONFIG" ]]; then
+    local context_name=$(basename "$SSHM_CONTEXT")
+    echo -e "\n${BLUE}${BOLD}Context: ${NC}${context_name}"
+  fi
+  
   echo -e "\n${BLUE}${BOLD}List of SSH hosts:${NC}"
   
   # Create a temporary file to store results
