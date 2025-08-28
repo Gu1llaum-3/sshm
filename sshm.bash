@@ -26,7 +26,7 @@ readonly BLUE='\033[0;34m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
-readonly VERSION="2.2.0"
+readonly VERSION="3.0.0"
 readonly CONFIG_DIR="${HOME}/.config/sshm"
 readonly DEFAULT_CONFIG="${HOME}/.ssh/config"
 readonly CURRENT_CONTEXT_FILE="${CONFIG_DIR}/.current_context"
@@ -167,7 +167,7 @@ sshm_help() {
   echo -e "${BLUE}${BOLD}Commands:${NC}"
   cat<<EOF | column -t -s $'\t'
   <host>                  Connect directly to SSH host by name
-  list [--ping]           List SSH hosts and prompt for connection (--ping to check availability)
+  list [--ping] [--tag <tag>]	List SSH hosts and prompt for connection (--ping to check availability, --tag to filter by tag)
   ping <name>             Ping an SSH host to check availability
   view <name>             Check configuration of host
   delete <name>           Delete an SSH host from the configuration
@@ -185,11 +185,25 @@ EOF
 sshm_list() {
   local config_file="$CONFIG_FILE"
   local do_ping=false
+  local filter_tag=""
   
-  # Check for --ping option
-  if [[ "$1" == "--ping" ]]; then
-    do_ping=true
-  fi
+  # Check for options
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --ping)
+        do_ping=true
+        shift
+        ;;
+      --tag)
+        filter_tag="$2"
+        shift 2
+        ;;
+      *)
+        echo -e "${RED}Error: Unknown option $1${NC}" 1>&2
+        exit 1
+        ;;
+    esac
+  done
   
   # Check if the file exists and is not empty
   if [[ ! -s "$config_file" ]]; then
@@ -211,49 +225,196 @@ sshm_list() {
     echo -e "\n${BLUE}${BOLD}Context: ${NC}${context_name}"
   fi
   
-  if [[ "$do_ping" == true ]]; then
-    echo -e "\n${BLUE}${BOLD}List of SSH hosts (with ping):${NC}"
+  if [[ -n "$filter_tag" ]]; then
+    if [[ "$do_ping" == true ]]; then
+      echo -e "\n${BLUE}${BOLD}List of SSH hosts with tag '$filter_tag' (with ping):${NC}"
+    else
+      echo -e "\n${BLUE}${BOLD}List of SSH hosts with tag '$filter_tag':${NC}"
+    fi
   else
-    echo -e "\n${BLUE}${BOLD}List of SSH hosts:${NC}"
+    if [[ "$do_ping" == true ]]; then
+      echo -e "\n${BLUE}${BOLD}List of SSH hosts (with ping):${NC}"
+    else
+      echo -e "\n${BLUE}${BOLD}List of SSH hosts:${NC}"
+    fi
   fi
   
   # Create a temporary file to store results
   local tmp_file
   tmp_file=$(mktemp)
   
+  # Create a file to store the filtered host names in order
+  local filtered_hosts_file
+  filtered_hosts_file=$(mktemp)
+  
   # Process each host
   while IFS= read -r line; do
     host=$(echo "$line" | awk '{print $2}')
+    
+    # Extract hostname from the host block
     hostname=$(awk '/^Host '"$host"'$/,/^$/' "$config_file" | awk '/HostName/ {print $2}')
+    
+    # Extract tags from the line immediately before the Host line
+    tags=$(awk '/^# Tags:.*/{tags=$0; getline; if($0 ~ /^Host '"$host"'$/) print tags}' "$config_file" | sed 's/^# Tags: //')
     
     # Skip if no hostname found
     if [[ -z "$hostname" ]]; then
       continue
     fi
+    
+    # Filter by tag if specified
+    if [[ -n "$filter_tag" ]]; then
+      if [[ ! "$tags" =~ (^|,)[[:space:]]*$filter_tag[[:space:]]*(,|$) ]]; then
+        continue
+      fi
+    fi
+
+    # Store the host name in the filtered list
+    echo "$host" >> "$filtered_hosts_file"
+
+    # Format tags for display
+    if [[ -n "$tags" ]]; then
+      tags_display="[$tags]"
+    else
+      tags_display=""
+    fi
 
     if [[ "$do_ping" == true ]]; then
       if ping -c 1 -W 1 "$hostname" &> /dev/null; then
-        echo -e "${GREEN}✓${NC} $host ($hostname)" >> "$tmp_file"
+        echo -e "✓ $host ($hostname) $tags_display" >> "$tmp_file"
       else
-        echo -e "${RED}✗${NC} $host ($hostname)" >> "$tmp_file"
+        echo -e "✗ $host ($hostname) $tags_display" >> "$tmp_file"
       fi
     else
-      echo -e "$host ($hostname)" >> "$tmp_file"
+      echo -e "$host ($hostname) $tags_display" >> "$tmp_file"
     fi
   done < <(grep -E '^Host ' "$config_file" | grep -v '^#' | sort)
 
-  # Display numbered results
-  nl "$tmp_file"
-  rm -f "$tmp_file"
+  # Check if we have any results
+  if [[ ! -s "$tmp_file" ]]; then
+    if [[ -n "$filter_tag" ]]; then
+      echo -e "\n${YELLOW}No hosts found with tag '$filter_tag'.${NC}"
+    else
+      echo -e "\n${YELLOW}No SSH hosts found.${NC}"
+    fi
+    rm -f "$tmp_file" "$filtered_hosts_file"
+    exit 0
+  fi
+
+  # Display results in a formatted table
+  echo
   
-  echo -ne "\n${BOLD}Enter the number or name of the host (or press Enter to exit):${NC} "
+  # First pass: calculate column widths
+  local max_host_len=4    # "Host" header length
+  local max_addr_len=7    # "Address" header length
+  local max_tags_len=4    # "Tags" header length
+  
+  # Create arrays to store parsed data
+  declare -a hosts
+  declare -a addresses
+  declare -a statuses
+  declare -a tags_list
+  
+  local counter=1
+  while IFS= read -r line; do
+    local status=""
+    local host_name=""
+    local address=""
+    local tags_part=""
+    
+    # Check if line starts with status symbol
+    if [[ "$line" =~ ^[[:space:]]*[✓✗][[:space:]]+ ]]; then
+      status=$(echo "$line" | sed -E 's/^[[:space:]]*([✓✗])[[:space:]]+.*/\1/')
+      line=$(echo "$line" | sed -E 's/^[[:space:]]*[✓✗][[:space:]]+//')
+    fi
+    
+    # Extract host and hostname: "host (hostname)"
+    if [[ "$line" =~ ^([^(]+)[[:space:]]*\(([^)]+)\)[[:space:]]*(.*)$ ]]; then
+      host_name=$(echo "${BASH_REMATCH[1]}" | xargs)
+      address="${BASH_REMATCH[2]}"
+      remainder="${BASH_REMATCH[3]}"
+      
+      if [[ "$remainder" =~ ^\[([^]]*)\] ]]; then
+        tags_part="${BASH_REMATCH[1]}"
+      fi
+    else
+      host_name="$line"
+    fi
+    
+    # Format tags
+    local formatted_tags=""
+    if [[ -n "$tags_part" ]]; then
+      IFS=',' read -ra TAG_ARRAY <<< "$tags_part"
+      # Sort tags alphabetically
+      IFS=$'\n' sorted_tags=($(sort <<<"${TAG_ARRAY[*]}"))
+      for tag in "${sorted_tags[@]}"; do
+        tag=$(echo "$tag" | xargs)  # trim whitespace
+        if [[ -n "$formatted_tags" ]]; then
+          formatted_tags="$formatted_tags #${tag}"
+        else
+          formatted_tags="#${tag}"
+        fi
+      done
+    fi
+    
+    # Store data and update max lengths
+    hosts[$counter]="$host_name"
+    addresses[$counter]="$address"
+    statuses[$counter]="$status"
+    tags_list[$counter]="$formatted_tags"
+    
+    [[ ${#host_name} -gt $max_host_len ]] && max_host_len=${#host_name}
+    [[ ${#address} -gt $max_addr_len ]] && max_addr_len=${#address}
+    [[ ${#formatted_tags} -gt $max_tags_len ]] && max_tags_len=${#formatted_tags}
+    
+    ((counter++))
+  done < "$tmp_file"
+  
+  # Add some padding
+  ((max_host_len += 2))
+  ((max_addr_len += 2))
+  ((max_tags_len += 2))
+  
+  # Print header based on ping option
+  if [[ "$do_ping" == true ]]; then
+    printf "%-4s %-${max_host_len}s %-${max_addr_len}s %-${max_tags_len}s %s\n" "No." "Host" "Address" "Tags" "Status"
+    printf "%-4s %-${max_host_len}s %-${max_addr_len}s %-${max_tags_len}s %s\n" "---" "$(printf '%*s' $max_host_len | tr ' ' '-')" "$(printf '%*s' $max_addr_len | tr ' ' '-')" "$(printf '%*s' $max_tags_len | tr ' ' '-')" "------"
+  else
+    printf "%-4s %-${max_host_len}s %-${max_addr_len}s %s\n" "No." "Host" "Address" "Tags"
+    printf "%-4s %-${max_host_len}s %-${max_addr_len}s %s\n" "---" "$(printf '%*s' $max_host_len | tr ' ' '-')" "$(printf '%*s' $max_addr_len | tr ' ' '-')" "----"
+  fi
+  
+  # Print data rows
+  for ((i=1; i<counter; i++)); do
+    if [[ "$do_ping" == true ]]; then
+      # Add colors to status symbols
+      local colored_status=""
+      if [[ "${statuses[$i]}" == "✓" ]]; then
+        colored_status="${GREEN}✓${NC}"
+      elif [[ "${statuses[$i]}" == "✗" ]]; then
+        colored_status="${RED}✗${NC}"
+      else
+        colored_status="${statuses[$i]}"
+      fi
+      printf "%-4s %-${max_host_len}s %-${max_addr_len}s %-${max_tags_len}s " "$i" "${hosts[$i]}" "${addresses[$i]}" "${tags_list[$i]}"
+      echo -e "$colored_status"
+    else
+      printf "%-4s %-${max_host_len}s %-${max_addr_len}s %s\n" "$i" "${hosts[$i]}" "${addresses[$i]}" "${tags_list[$i]}"
+    fi
+  done
+  
+  rm -f "$tmp_file"
+  echo
+  echo -ne "${BOLD}Enter the number or name of the host (or press Enter to exit):${NC} "
   read host
   if [[ -z "$host" ]]; then
     echo "No host specified, exiting."
+    rm -f "$filtered_hosts_file"
     exit 0
   fi
   
-  sshm_connect "$config_file" "$host"
+  sshm_connect_filtered "$config_file" "$host" "$filtered_hosts_file"
+  rm -f "$filtered_hosts_file"
 }
 
 sshm_connect() {
@@ -267,6 +428,39 @@ sshm_connect() {
   if [[ "$host" =~ ^[0-9]+$ ]]; then
     local host_name
     host_name=$(grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | sed -n "${host}p")
+    if [[ -n "$host_name" ]]; then
+      echo -e "\n${GREEN}Connecting to $host_name...${NC}\n"
+      ssh -F "$config_file" "$host_name"
+    else
+      echo -e "${RED}Error: Invalid host number.${NC}" 1>&2
+      exit 2
+    fi
+  else
+    # Check if the host exists in the SSH configuration
+    if ! grep -q "^Host $host$" "$config_file"; then
+      echo -e "${RED}Error: Host '$host' not found in SSH configuration.${NC}" 1>&2
+      echo -e "Use ${BOLD}sshm list${NC} to see available hosts or ${BOLD}sshm add $host${NC} to add it." 1>&2
+      exit 1
+    fi
+    
+    echo -e "\n${GREEN}Connecting to $host...${NC}\n"
+    ssh -F "$config_file" "$host"
+  fi
+}
+
+sshm_connect_filtered() {
+  local config_file="$1"
+  local host="$2"
+  local filtered_hosts_file="$3"
+  
+  if [[ -z "$host" ]]; then
+    echo -e "${RED}Error: please provide a host number or name.${NC}" 1>&2
+    exit 1
+  fi
+
+  if [[ "$host" =~ ^[0-9]+$ ]]; then
+    local host_name
+    host_name=$(sed -n "${host}p" "$filtered_hosts_file")
     if [[ -n "$host_name" ]]; then
       echo -e "\n${GREEN}Connecting to $host_name...${NC}\n"
       ssh -F "$config_file" "$host_name"
@@ -345,7 +539,34 @@ sshm_delete() {
   # Create a temporary file for the new content
   local tmp_file
   tmp_file=$(mktemp)
-  sed '/^Host '"$host"'$/,/^$/d' "$config_file" > "$tmp_file"
+  
+  # Remove host block including tags (look for "# Tags:" line before "Host")
+  awk '
+    /^# Tags:.*/ {
+      # Check if next non-empty line is the host we want to delete
+      tags_line = $0
+      while ((getline next_line) > 0) {
+        if (next_line ~ /^$/) continue
+        if (next_line ~ /^Host '"$host"'$/) {
+          # Skip this host block entirely
+          while ((getline) > 0 && !/^$/) continue
+          next
+        } else {
+          # Not our host, keep the tags line and the next line
+          print tags_line
+          print next_line
+          break
+        }
+      }
+      next
+    }
+    /^Host '"$host"'$/ {
+      # Skip this host block
+      while ((getline) > 0 && !/^$/) continue
+      next
+    }
+    { print }
+  ' "$config_file" > "$tmp_file"
 
   # Check if the temporary file is not empty before overwriting
   if [[ -s "$tmp_file" ]]; then
@@ -409,12 +630,17 @@ sshm_add() {
 
   read -p "Enter ProxyJump host (optional): " proxy_jump
 
+  read -p "Enter tags (comma-separated, optional): " tags
+  
   # Create the file if it doesn't exist
   touch "$config_file"
 
   # Add the new configuration
   {
     echo ""
+    if [[ -n "$tags" ]]; then
+      echo "# Tags: $tags"
+    fi
     echo "Host $host"
     echo "    HostName $hostname"
     echo "    User $user"
@@ -459,6 +685,9 @@ sshm_edit() {
   local current_port=$(echo "$host_info" | awk '/Port/ {print $2}')
   local current_identity_file=$(echo "$host_info" | awk '/IdentityFile/ {print $2}')
   local current_proxyjump=$(echo "$host_info" | awk '/ProxyJump/ {print $2}')
+  
+  # Extract tags from the line immediately before the Host line
+  local current_tags=$(awk '/^# Tags:.*/{tags=$0; getline; if($0 ~ /^Host '"$host"'$/) print tags}' "$config_file" | sed 's/^# Tags: //')
 
   # Create backup of the original file
   cp "$config_file" "$config_file.bak"
@@ -486,6 +715,9 @@ sshm_edit() {
   else
     read -p "ProxyJump (leave empty if none): " new_proxyjump
   fi
+
+  read -p "Tags [${current_tags}] (comma-separated): " new_tags
+  new_tags=${new_tags:-$current_tags}
   
   # Create a temporary file for the new content
   local tmp_file
@@ -505,6 +737,9 @@ sshm_edit() {
     # Add the new configuration
   {
     echo ""
+    if [[ -n "$new_tags" ]]; then
+      echo "# Tags: $new_tags"
+    fi
     echo "Host $host"
     echo "    HostName $new_hostname"
     echo "    User $new_user"

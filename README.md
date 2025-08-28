@@ -5,6 +5,7 @@ SSH Manager (sshm) is a bash script that simplifies and automates the management
 ## Features
 
 - List all SSH hosts in the configuration file (with optional ping check).
+- Filter SSH hosts by tags for better organization.
 - Connect to an SSH host by name or number from the list.
 - View the configuration details of a specific SSH host.
 - Add a new SSH host configuration.
@@ -55,6 +56,18 @@ To check host availability with ping (may be slower if hosts are unreachable):
 
 ```bash
 sshm list --ping
+```
+
+To filter hosts by a specific tag:
+
+```bash
+sshm list --tag production
+```
+
+You can combine options:
+
+```bash
+sshm list --ping --tag staging
 ```
 
 ### Connect to an SSH Host
@@ -164,6 +177,12 @@ sshm list
 
 # List with availability check (slower if hosts are down)
 sshm list --ping
+
+# Filter by specific tag
+sshm list --tag production
+
+# Combine filtering and ping check
+sshm list --ping --tag staging
 ```
 
 ### Adding a New SSH Host
@@ -178,6 +197,8 @@ You will be prompted to enter the following details:
 - User (default: current user)
 - Port (default: 22)
 - IdentityFile (default: `~/.ssh/id_rsa`)
+- ProxyJump (optional)
+- Tags (optional, comma-separated)
 
 ### Editing an Existing SSH Host
 
@@ -214,6 +235,36 @@ sshm upgrade
 ```
 
 Checks for and installs the latest version of sshm. The command will show you the current version, the available version, and ask for confirmation before upgrading.
+
+## Tags
+
+SSH Manager supports tagging hosts for better organization and filtering. Tags are comma-separated labels that help you categorize your SSH hosts.
+
+### Using Tags
+
+When adding or editing a host, you can specify tags:
+
+```bash
+sshm add
+# When prompted, enter tags like: production, webserver, ubuntu
+```
+
+### Filtering by Tags
+
+Use the `--tag` option to filter hosts:
+
+```bash
+# Show only production hosts
+sshm list --tag production
+
+# Show only development hosts with ping check
+sshm list --ping --tag development
+```
+
+### Tag Display
+
+Tags are displayed in the list view with a `#` prefix and are automatically sorted alphabetically:
+- Tags: `#database #production #ubuntu`
 
 ## License
 
