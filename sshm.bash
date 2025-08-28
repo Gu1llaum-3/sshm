@@ -157,7 +157,7 @@ sshm_connect() {
 
   if [[ "$host" =~ ^[0-9]+$ ]]; then
     local host_name
-    host_name=$(grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sed -n "${host}p")
+    host_name=$(grep -E '^Host ' "$config_file" | awk '{print $2}' | grep -v '^#' | sort | sed -n "${host}p")
     if [[ -n "$host_name" ]]; then
       echo -e "\n${GREEN}Connecting to $host_name...${NC}\n"
       ssh -F "$config_file" "$host_name"
