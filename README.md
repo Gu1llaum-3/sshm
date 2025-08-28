@@ -12,6 +12,7 @@ SSH Manager (sshm) is a bash script that simplifies and automates the management
 - Delete an SSH host configuration.
 - Check the availability of an SSH host using ping.
 - Manage multiple SSH configuration contexts.
+- Upgrade sshm to the latest version automatically.
 
 ## Requirements
 
@@ -137,6 +138,22 @@ sshm context delete <context_name>
 
 Deletes the specified SSH configuration context.
 
+### Upgrade sshm
+
+```bash
+sshm upgrade
+```
+
+Automatically checks for the latest version on GitHub and upgrades sshm if a newer version is available. The script will:
+- Check for updates from the GitHub repository
+- Display the current and available versions
+- Show the installation path (`/usr/local/bin/sshm`)
+- Ask for confirmation before proceeding
+- Download and install the latest version
+- Verify the installation
+
+The upgrade will attempt to install to `/usr/local/bin/sshm` (may require sudo), and fall back to `~/.local/bin/sshm` if needed.
+
 ## Example
 
 ### Listing and Connecting to SSH Hosts
@@ -189,6 +206,14 @@ sshm context use myconfig
 ```
 
 Switches to the `myconfig` SSH configuration context.
+
+### Upgrading sshm
+
+```bash
+sshm upgrade
+```
+
+Checks for and installs the latest version of sshm. The command will show you the current version, the available version, and ask for confirmation before upgrading.
 
 ## License
 

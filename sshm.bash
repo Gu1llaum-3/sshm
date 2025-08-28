@@ -26,7 +26,7 @@ readonly BLUE='\033[0;34m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
-readonly VERSION="2.1.1"
+readonly VERSION="2.2.0"
 readonly CONFIG_DIR="${HOME}/.config/sshm"
 readonly DEFAULT_CONFIG="${HOME}/.ssh/config"
 readonly CURRENT_CONTEXT_FILE="${CONFIG_DIR}/.current_context"
@@ -61,9 +61,103 @@ sshm_version() {
   # Compare with the current version
   if [[ "$latest_version" != "$VERSION" ]]; then
     echo -e "${YELLOW}A new version of sshm is available: $latest_version${NC} (current: $VERSION)"
-    echo -e "You can update by running: ${BOLD}git pull origin main${NC}"
+    echo -e "You can update by running: ${BOLD}sshm upgrade${NC}"
   else
     echo -e "${GREEN}This is the latest version${NC}"
+  fi
+}
+
+sshm_upgrade() {
+  echo -e "${BLUE}${BOLD}Checking for updates...${NC}"
+  echo
+
+  # Fetch the latest release tag from GitHub
+  local latest_version
+  latest_version=$(curl -s "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | jq -r .tag_name)
+  
+  if [[ "$latest_version" == "null" ]]; then
+    echo -e "${RED}Error: Unable to fetch the latest release from GitHub.${NC}" 1>&2
+    exit 1
+  fi
+
+  # Compare with the current version
+  if [[ "$latest_version" == "$VERSION" ]]; then
+    echo -e "${GREEN}You are already running the latest version ($VERSION)${NC}"
+    exit 0
+  fi
+
+  echo -e "${YELLOW}New version available: $latest_version${NC} (current: $VERSION)"
+  echo -e "${BLUE}Installation path: ${BOLD}/usr/local/bin/sshm${NC}"
+  echo
+
+  # Ask for confirmation
+  echo -ne "${BOLD}Do you want to upgrade to version $latest_version? [y/N]:${NC} "
+  read -r confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo -e "${YELLOW}Upgrade cancelled.${NC}"
+    exit 0
+  fi
+
+  echo -e "\n${BLUE}Downloading sshm $latest_version...${NC}"
+  
+  # Create temporary directory
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local download_url="https://raw.githubusercontent.com/$GITHUB_REPO/$latest_version/sshm.bash"
+  
+  # Download the new version
+  if ! curl -s -o "$tmp_dir/sshm.bash" "$download_url"; then
+    echo -e "${RED}Error: Failed to download the new version.${NC}" 1>&2
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  # Verify the download
+  if [[ ! -s "$tmp_dir/sshm.bash" ]]; then
+    echo -e "${RED}Error: Downloaded file is empty.${NC}" 1>&2
+    rm -rf "$tmp_dir"
+    exit 1
+  fi
+
+  # Make it executable
+  chmod +x "$tmp_dir/sshm.bash"
+
+  echo -e "${BLUE}Installing sshm $latest_version to /usr/local/bin/sshm...${NC}"
+  
+  # Install to /usr/local/bin (may require sudo)
+  if sudo cp "$tmp_dir/sshm.bash" "/usr/local/bin/sshm" 2>/dev/null; then
+    echo -e "${GREEN}✓ sshm successfully upgraded to version $latest_version${NC}"
+    echo -e "Installation location: ${BOLD}/usr/local/bin/sshm${NC}"
+  else
+    echo -e "${RED}Error: Failed to install to /usr/local/bin. Trying alternative locations...${NC}"
+    
+    # Try alternative locations
+    if [[ -w "$HOME/.local/bin" ]] || mkdir -p "$HOME/.local/bin" 2>/dev/null; then
+      if cp "$tmp_dir/sshm.bash" "$HOME/.local/bin/sshm"; then
+        echo -e "${GREEN}✓ sshm successfully upgraded to version $latest_version${NC}"
+        echo -e "Installation location: ${BOLD}$HOME/.local/bin/sshm${NC}"
+        echo -e "${YELLOW}Note: Make sure $HOME/.local/bin is in your PATH${NC}"
+      else
+        echo -e "${RED}Error: Failed to install to $HOME/.local/bin${NC}" 1>&2
+        rm -rf "$tmp_dir"
+        exit 1
+      fi
+    else
+      echo -e "${RED}Error: No writable installation directory found.${NC}" 1>&2
+      echo -e "Please manually copy the file from: ${BOLD}$tmp_dir/sshm.bash${NC}"
+      exit 1
+    fi
+  fi
+
+  # Clean up
+  rm -rf "$tmp_dir"
+  
+  echo -e "\n${BLUE}Verifying installation...${NC}"
+  if command -v sshm >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ Installation verified successfully${NC}"
+    echo -e "Run ${BOLD}sshm version${NC} to confirm the new version."
+  else
+    echo -e "${YELLOW}Warning: sshm command not found in PATH. You may need to restart your shell or update your PATH.${NC}"
   fi
 }
 
@@ -84,6 +178,7 @@ sshm_help() {
   context delete <name>   Delete an existing context
   help                    Displays help
   version                 Displays the current version
+  upgrade                 Upgrade sshm to the latest version
 EOF
 }
 
@@ -574,6 +669,9 @@ sshm_main() {
       ;;
     "version")
       sshm_version
+      ;;
+    "upgrade")
+      sshm_upgrade
       ;;
     "help")
       sshm_help
