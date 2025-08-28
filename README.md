@@ -4,8 +4,8 @@ SSH Manager (sshm) is a bash script that simplifies and automates the management
 
 ## Features
 
-- List all SSH hosts in the configuration file.
-- Connect to an SSH host by name.
+- List all SSH hosts in the configuration file (with optional ping check).
+- Connect to an SSH host by name or number from the list.
 - View the configuration details of a specific SSH host.
 - Add a new SSH host configuration.
 - Edit an existing SSH host configuration.
@@ -26,7 +26,7 @@ SSH Manager (sshm) is a bash script that simplifies and automates the management
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/sshm.git
+   git clone https://github.com/Gu1llaum-3/sshm.git
    cd sshm
    ```
 
@@ -50,10 +50,23 @@ SSH Manager (sshm) is a bash script that simplifies and automates the management
 sshm list
 ```
 
+To check host availability with ping (may be slower if hosts are unreachable):
+
+```bash
+sshm list --ping
+```
+
 ### Connect to an SSH Host
 
 ```bash
 sshm <host>
+```
+
+You can also connect by selecting a number from the `sshm list` output:
+
+```bash
+sshm list
+# Select a number when prompted, e.g., type "1" to connect to the first host
 ```
 
 ### View SSH Host Configuration
@@ -125,6 +138,16 @@ sshm context delete <context_name>
 Deletes the specified SSH configuration context.
 
 ## Example
+
+### Listing and Connecting to SSH Hosts
+
+```bash
+# Quick list without ping check (fast)
+sshm list
+
+# List with availability check (slower if hosts are down)
+sshm list --ping
+```
 
 ### Adding a New SSH Host
 

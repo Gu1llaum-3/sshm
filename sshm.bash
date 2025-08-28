@@ -26,7 +26,7 @@ readonly BLUE='\033[0;34m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
-readonly VERSION="2.1.0"
+readonly VERSION="2.1.1"
 readonly CONFIG_DIR="${HOME}/.config/sshm"
 readonly DEFAULT_CONFIG="${HOME}/.ssh/config"
 readonly CURRENT_CONTEXT_FILE="${CONFIG_DIR}/.current_context"
@@ -73,7 +73,7 @@ sshm_help() {
   echo -e "${BLUE}${BOLD}Commands:${NC}"
   cat<<EOF | column -t -s $'\t'
   <host>                  Connect directly to SSH host by name
-  list                    List SSH hosts and prompt for connection
+  list [--ping]           List SSH hosts and prompt for connection (--ping to check availability)
   ping <name>             Ping an SSH host to check availability
   view <name>             Check configuration of host
   delete <name>           Delete an SSH host from the configuration
@@ -89,6 +89,12 @@ EOF
 
 sshm_list() {
   local config_file="$CONFIG_FILE"
+  local do_ping=false
+  
+  # Check for --ping option
+  if [[ "$1" == "--ping" ]]; then
+    do_ping=true
+  fi
   
   # Check if the file exists and is not empty
   if [[ ! -s "$config_file" ]]; then
@@ -110,7 +116,11 @@ sshm_list() {
     echo -e "\n${BLUE}${BOLD}Context: ${NC}${context_name}"
   fi
   
-  echo -e "\n${BLUE}${BOLD}List of SSH hosts:${NC}"
+  if [[ "$do_ping" == true ]]; then
+    echo -e "\n${BLUE}${BOLD}List of SSH hosts (with ping):${NC}"
+  else
+    echo -e "\n${BLUE}${BOLD}List of SSH hosts:${NC}"
+  fi
   
   # Create a temporary file to store results
   local tmp_file
@@ -126,10 +136,14 @@ sshm_list() {
       continue
     fi
 
-    if ping -c 1 -W 1 "$hostname" &> /dev/null; then
-      echo -e "${GREEN}✓${NC} $host ($hostname)" >> "$tmp_file"
+    if [[ "$do_ping" == true ]]; then
+      if ping -c 1 -W 1 "$hostname" &> /dev/null; then
+        echo -e "${GREEN}✓${NC} $host ($hostname)" >> "$tmp_file"
+      else
+        echo -e "${RED}✗${NC} $host ($hostname)" >> "$tmp_file"
+      fi
     else
-      echo -e "${RED}✗${NC} $host ($hostname)" >> "$tmp_file"
+      echo -e "$host ($hostname)" >> "$tmp_file"
     fi
   done < <(grep -E '^Host ' "$config_file" | grep -v '^#' | sort)
 
@@ -517,7 +531,7 @@ sshm_main() {
   # Check if command is a known command, otherwise treat it as a host to connect to
   case "$command" in
     "list")
-      sshm_list
+      sshm_list "$@"
       ;;
     "ping")
       sshm_ping "$CONFIG_FILE" "$@"
