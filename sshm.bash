@@ -26,7 +26,7 @@ readonly BLUE='\033[0;34m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
-readonly VERSION="3.0.0"
+readonly VERSION="3.0.1"
 readonly CONFIG_DIR="${HOME}/.config/sshm"
 readonly DEFAULT_CONFIG="${HOME}/.ssh/config"
 readonly CURRENT_CONTEXT_FILE="${CONFIG_DIR}/.current_context"
@@ -723,8 +723,33 @@ sshm_edit() {
   local tmp_file
   tmp_file=$(mktemp)
   
-  # Delete the old configuration
-  sed '/^Host '"$host"'$/,/^$/d' "$config_file" > "$tmp_file"
+  # Delete the old configuration including tags (same logic as sshm_delete)
+  awk '
+    /^# Tags:.*/ {
+      # Check if next non-empty line is the host we want to edit
+      tags_line = $0
+      while ((getline next_line) > 0) {
+        if (next_line ~ /^$/) continue
+        if (next_line ~ /^Host '"$host"'$/) {
+          # Skip this host block entirely
+          while ((getline) > 0 && !/^$/) continue
+          next
+        } else {
+          # Not our host, keep the tags line and the next line
+          print tags_line
+          print next_line
+          break
+        }
+      }
+      next
+    }
+    /^Host '"$host"'$/ {
+      # Skip this host block
+      while ((getline) > 0 && !/^$/) continue
+      next
+    }
+    { print }
+  ' "$config_file" > "$tmp_file"
 
   # Check if the temporary file is not empty
   if [[ ! -s "$tmp_file" ]]; then
