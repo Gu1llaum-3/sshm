@@ -142,29 +142,15 @@ func (m *Model) updateTableHeight() {
 		return
 	}
 
-<<<<<<< HEAD
-	hostCount := len(m.table.Rows())
-
-	// Calculate exactly what we need:
-	// 1 line for header + actual number of host rows + 1 extra line for better UX
-	tableHeight := 1 + hostCount + 1
-
-	// Set a reasonable maximum based on terminal height
-	// Leave space for: title (5) + search (1) + help (1) + margins (2) = 9 lines
-	// But be less conservative, use 7 lines instead of 9
-	maxPossibleHeight := m.height - 7
-	if maxPossibleHeight < 4 {
-		maxPossibleHeight = 4 // Minimum: header + 3 rows
-=======
 	// Calculate dynamic table height based on terminal size
 	// Layout breakdown:
 	// - ASCII title: 5 lines (1 empty + 4 text lines)
 	// - Search bar: 1 line
-	// - Sort info: 1 line
-	// - Help text: 2 lines (multi-line text)
-	// - App margins/spacing: 2 lines
-	// Total reserved: 16 lines for more space
-	reservedHeight := 16
+	// - Help text: 1 line
+	// - App margins/spacing: 3 lines
+	// - Safety margin: 3 lines (to ensure UI elements are always visible)
+	// Total reserved: 12 lines minimum to preserve essential UI elements
+	reservedHeight := 12
 	availableHeight := m.height - reservedHeight
 	hostCount := len(m.table.Rows())
 
@@ -174,11 +160,18 @@ func (m *Model) updateTableHeight() {
 	maxTableHeight := availableHeight
 	if maxTableHeight < minTableHeight {
 		maxTableHeight = minTableHeight
->>>>>>> main
 	}
 
-	if tableHeight > maxPossibleHeight {
-		tableHeight = maxPossibleHeight
+	tableHeight := 1 // header
+	dataRowsNeeded := hostCount
+	maxDataRows := maxTableHeight - 1 // subtract 1 for header
+
+	if dataRowsNeeded <= maxDataRows {
+		// We have enough space for all hosts
+		tableHeight += dataRowsNeeded
+	} else {
+		// We need to limit to available space
+		tableHeight += maxDataRows
 	}
 
 	// Update table height
