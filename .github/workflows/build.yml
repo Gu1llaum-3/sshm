@@ -113,12 +113,22 @@ jobs:
         find ./artifacts -name "*.zip" -exec cp {} ./release/ \;
         ls -la ./release/
 
+    - name: Check if pre-release
+      id: check_prerelease
+      run: |
+        if [[ "${GITHUB_REF#refs/tags/}" == *"-beta"* ]] || [[ "${GITHUB_REF#refs/tags/}" == *"-alpha"* ]] || [[ "${GITHUB_REF#refs/tags/}" == *"-rc"* ]]; then
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         files: ./release/*
         draft: false
-        prerelease: false
+        prerelease: ${{ steps.check_prerelease.outputs.is_prerelease }}
         generate_release_notes: true
+        name: ${{ github.ref_name }}${{ steps.check_prerelease.outputs.is_prerelease == 'true' && ' (Pre-release)' || '' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
