@@ -2,6 +2,7 @@ package ui
 
 import (
 	"sshm/internal/config"
+	"sshm/internal/connectivity"
 	"sshm/internal/history"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -73,6 +74,7 @@ type Model struct {
 	deleteMode     bool
 	deleteHost     string
 	historyManager *history.HistoryManager
+	pingManager    *connectivity.PingManager
 	sortMode       SortMode
 	configFile     string // Path to the SSH config file
 

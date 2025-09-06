@@ -1,20 +1,59 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"sshm/internal/config"
+	"sshm/internal/connectivity"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Messages for SSH ping functionality
+type (
+	pingResultMsg *connectivity.HostPingResult
+)
+
+// startPingAllCmd creates a command to ping all hosts concurrently
+func (m Model) startPingAllCmd() tea.Cmd {
+	if m.pingManager == nil {
+		return nil
+	}
+
+	return tea.Batch(
+		// Create individual ping commands for each host
+		func() tea.Cmd {
+			var cmds []tea.Cmd
+			for _, host := range m.hosts {
+				cmds = append(cmds, pingSingleHostCmd(m.pingManager, host))
+			}
+			return tea.Batch(cmds...)
+		}(),
+	)
+}
+
+// listenForPingResultsCmd is no longer needed since we use individual ping commands
+
+// pingSingleHostCmd creates a command to ping a single host
+func pingSingleHostCmd(pingManager *connectivity.PingManager, host config.SSHHost) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		result := pingManager.PingHost(ctx, host)
+		return pingResultMsg(result)
+	}
+}
+
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
-		// Ajoute ici d'autres tea.Cmd si tu veux charger des données, démarrer un spinner, etc.
+		// Ping is now optional - use 'p' key to start ping
 	)
 }
 
@@ -65,6 +104,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fileSelectorForm.width = m.width
 			m.fileSelectorForm.height = m.height
 			m.fileSelectorForm.styles = m.styles
+		}
+		return m, nil
+
+	case pingResultMsg:
+		// Handle ping result - update table display
+		if msg != nil {
+			// Update the table to reflect the new ping status
+			m.updateTableRows()
 		}
 		return m, nil
 
@@ -396,7 +443,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Connect to the selected host
 			selected := m.table.SelectedRow()
 			if len(selected) > 0 {
-				hostName := selected[0] // The hostname is in the first column
+				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
 
 				// Record the connection in history
 				if m.historyManager != nil {
@@ -425,7 +472,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Edit the selected host
 			selected := m.table.SelectedRow()
 			if len(selected) > 0 {
-				hostName := selected[0] // The hostname is in the first column
+				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
 				editForm, err := NewEditForm(hostName, m.styles, m.width, m.height, m.configFile)
 				if err != nil {
 					// Handle error - could show in UI
@@ -441,7 +488,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Show info for the selected host
 			selected := m.table.SelectedRow()
 			if len(selected) > 0 {
-				hostName := selected[0] // The hostname is in the first column
+				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
 				infoForm, err := NewInfoForm(hostName, m.styles, m.width, m.height, m.configFile)
 				if err != nil {
 					// Handle error - could show in UI
@@ -495,19 +542,24 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Delete the selected host
 			selected := m.table.SelectedRow()
 			if len(selected) > 0 {
-				hostName := selected[0] // The hostname is in the first column
+				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
 				m.deleteMode = true
 				m.deleteHost = hostName
 				m.table.Blur()
 				return m, nil
 			}
 		}
+	case "p":
+		if !m.searchMode && !m.deleteMode {
+			// Ping all hosts
+			return m, m.startPingAllCmd()
+		}
 	case "f":
 		if !m.searchMode && !m.deleteMode {
 			// Port forwarding for the selected host
 			selected := m.table.SelectedRow()
 			if len(selected) > 0 {
-				hostName := selected[0] // The hostname is in the first column
+				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
 				m.portForwardForm = NewPortForwardForm(hostName, m.styles, m.width, m.height, m.configFile)
 				m.viewMode = ViewPortForward
 				return m, textinput.Blink

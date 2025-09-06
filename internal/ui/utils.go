@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sshm/internal/connectivity"
 	"strings"
 	"time"
 )
@@ -68,4 +69,37 @@ func formatConfigFile(filePath string) string {
 		return fmt.Sprintf(".../%s/%s", parts[len(parts)-2], parts[len(parts)-1])
 	}
 	return filePath
+}
+
+// getPingStatusIndicator returns a colored circle indicator based on ping status
+func (m *Model) getPingStatusIndicator(hostName string) string {
+	if m.pingManager == nil {
+		return "⚫" // Gray circle for unknown
+	}
+
+	status := m.pingManager.GetStatus(hostName)
+	switch status {
+	case connectivity.StatusOnline:
+		return "🟢" // Green circle for online
+	case connectivity.StatusOffline:
+		return "🔴" // Red circle for offline
+	case connectivity.StatusConnecting:
+		return "🟡" // Yellow circle for connecting
+	default:
+		return "⚫" // Gray circle for unknown
+	}
+}
+
+// extractHostNameFromTableRow extracts the host name from the first column,
+// removing the ping status indicator
+func extractHostNameFromTableRow(firstColumn string) string {
+	// The first column format is: "🟢 hostname" or "⚫ hostname" etc.
+	// We need to remove the emoji and space to get just the hostname
+	parts := strings.Fields(firstColumn)
+	if len(parts) >= 2 {
+		// Return everything after the first part (the emoji)
+		return strings.Join(parts[1:], " ")
+	}
+	// Fallback: if there's no space, return the whole string
+	return firstColumn
 }

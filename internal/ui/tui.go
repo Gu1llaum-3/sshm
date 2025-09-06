@@ -3,8 +3,10 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"sshm/internal/config"
+	"sshm/internal/connectivity"
 	"sshm/internal/history"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -26,10 +28,14 @@ func NewModel(hosts []config.SSHHost, configFile string) Model {
 	// Create initial styles (will be updated on first WindowSizeMsg)
 	styles := NewStyles(80) // Default width
 
+	// Initialize ping manager with 5 second timeout
+	pingManager := connectivity.NewPingManager(5 * time.Second)
+
 	// Create the model with default sorting by name
 	m := Model{
 		hosts:          hosts,
 		historyManager: historyManager,
+		pingManager:    pingManager,
 		sortMode:       SortByName,
 		configFile:     configFile,
 		styles:         styles,
@@ -48,19 +54,13 @@ func NewModel(hosts []config.SSHHost, configFile string) Model {
 	ti.CharLimit = 50
 	ti.Width = 50
 
-	// Calculate optimal width for the Name column
-	nameWidth := calculateNameColumnWidth(sortedHosts)
-
-	// Calculate optimal width for the Tags column
-	tagsWidth := calculateTagsColumnWidth(sortedHosts)
-
-	// Calculate optimal width for the Last Login column
-	lastLoginWidth := calculateLastLoginColumnWidth(sortedHosts, historyManager)
+	// Use dynamic column width calculation (will fallback to static if width not available)
+	nameWidth, hostnameWidth, tagsWidth, lastLoginWidth := m.calculateDynamicColumnWidths(sortedHosts)
 
 	// Create table columns
 	columns := []table.Column{
 		{Title: "Name", Width: nameWidth},
-		{Title: "Hostname", Width: 25},
+		{Title: "Hostname", Width: hostnameWidth},
 		// {Title: "User", Width: 12},                  // Commented to save space
 		// {Title: "Port", Width: 6},                   // Commented to save space
 		{Title: "Tags", Width: tagsWidth},
@@ -70,6 +70,9 @@ func NewModel(hosts []config.SSHHost, configFile string) Model {
 	// Convert hosts to table rows
 	var rows []table.Row
 	for _, host := range sortedHosts {
+		// Get ping status indicator
+		statusIndicator := m.getPingStatusIndicator(host.Name)
+
 		// Format tags for display
 		var tagsStr string
 		if len(host.Tags) > 0 {
@@ -90,7 +93,7 @@ func NewModel(hosts []config.SSHHost, configFile string) Model {
 		}
 
 		rows = append(rows, table.Row{
-			host.Name,
+			statusIndicator + " " + host.Name,
 			host.Hostname,
 			// host.User,        // Commented to save space
 			// host.Port,        // Commented to save space
