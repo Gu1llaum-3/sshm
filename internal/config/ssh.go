@@ -544,17 +544,40 @@ func HostExists(hostName string) (bool, error) {
 
 // HostExistsInFile checks if a host exists in a specific config file
 func HostExistsInFile(hostName string, configPath string) (bool, error) {
-	hosts, err := ParseSSHConfigFile(configPath)
+	// Parse only the specific file, not its includes
+	return HostExistsInSpecificFile(hostName, configPath)
+}
+
+// HostExistsInSpecificFile checks if a host exists in a specific file only (no includes)
+func HostExistsInSpecificFile(hostName string, configPath string) (bool, error) {
+	file, err := os.Open(configPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
 		return false, err
 	}
+	defer file.Close()
 
-	for _, host := range hosts {
-		if host.Name == hostName {
-			return true, nil
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Check for Host declaration
+		if strings.HasPrefix(strings.ToLower(line), "host ") {
+			// Extract host names (can be multiple hosts on one line)
+			hostPart := strings.TrimSpace(line[5:]) // Remove "host "
+			hostNames := strings.Fields(hostPart)
+
+			for _, name := range hostNames {
+				if name == hostName {
+					return true, nil
+				}
+			}
 		}
 	}
-	return false, nil
+
+	return false, scanner.Err()
 }
 
 // GetSSHHost retrieves a specific host configuration by name
@@ -939,4 +962,68 @@ func GetIncludedConfigFiles() ([]string, error) {
 	}
 
 	return writableFiles, nil
+}
+
+// MoveHostToFile moves an SSH host from its current config file to a target config file
+func MoveHostToFile(hostName string, targetConfigFile string) error {
+	// Find the host in all configs to get its current location and data
+	host, err := FindHostInAllConfigs(hostName)
+	if err != nil {
+		return err
+	}
+
+	// Check if the target file is different from the current source file
+	if host.SourceFile == targetConfigFile {
+		return fmt.Errorf("host '%s' is already in the target config file '%s'", hostName, targetConfigFile)
+	}
+
+	// First, add the host to the target config file
+	err = AddSSHHostToFile(*host, targetConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to add host to target file: %v", err)
+	}
+
+	// Then, remove the host from its current source file
+	err = DeleteSSHHostFromFile(hostName, host.SourceFile)
+	if err != nil {
+		// If removal fails, we should try to rollback the addition, but for simplicity
+		// we'll just return the error. In a production environment, you might want
+		// to implement a proper rollback mechanism.
+		return fmt.Errorf("failed to remove host from source file: %v", err)
+	}
+
+	return nil
+}
+
+// GetConfigFilesExcludingCurrent returns all config files except the one containing the specified host
+func GetConfigFilesExcludingCurrent(hostName string, baseConfigFile string) ([]string, error) {
+	// Get all config files
+	var allFiles []string
+	var err error
+
+	if baseConfigFile != "" {
+		allFiles, err = GetAllConfigFilesFromBase(baseConfigFile)
+	} else {
+		allFiles, err = GetAllConfigFiles()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the host to get its current source file
+	host, err := FindHostInAllConfigs(hostName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out the current source file
+	var filteredFiles []string
+	for _, file := range allFiles {
+		if file != host.SourceFile {
+			filteredFiles = append(filteredFiles, file)
+		}
+	}
+
+	return filteredFiles, nil
 }

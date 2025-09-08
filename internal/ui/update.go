@@ -85,6 +85,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editForm.height = m.height
 			m.editForm.styles = m.styles
 		}
+		if m.moveForm != nil {
+			m.moveForm.width = m.width
+			m.moveForm.height = m.height
+			m.moveForm.styles = m.styles
+		}
 		if m.infoForm != nil {
 			m.infoForm.width = m.width
 			m.infoForm.height = m.height
@@ -203,6 +208,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table.Focus()
 		return m, nil
 
+	case moveFormSubmitMsg:
+		if msg.err != nil {
+			// En cas d'erreur, on pourrait afficher une notification ou retourner à la liste
+			// Pour l'instant, on retourne simplement à la liste
+			m.viewMode = ViewList
+			m.moveForm = nil
+			m.table.Focus()
+			return m, nil
+		} else {
+			// Success: refresh hosts and return to list view
+			var hosts []config.SSHHost
+			var err error
+
+			if m.configFile != "" {
+				hosts, err = config.ParseSSHConfigFile(m.configFile)
+			} else {
+				hosts, err = config.ParseSSHConfig()
+			}
+
+			if err != nil {
+				return m, tea.Quit
+			}
+			m.hosts = m.sortHosts(hosts)
+
+			// Reapply search filter if there is one active
+			if m.searchInput.Value() != "" {
+				m.filteredHosts = m.filterHosts(m.searchInput.Value())
+			} else {
+				m.filteredHosts = m.hosts
+			}
+
+			m.updateTableRows()
+			m.viewMode = ViewList
+			m.moveForm = nil
+			m.table.Focus()
+			return m, nil
+		}
+
+	case moveFormCancelMsg:
+		// Cancel: return to list view
+		m.viewMode = ViewList
+		m.moveForm = nil
+		m.table.Focus()
+		return m, nil
+
 	case infoFormCancelMsg:
 		// Cancel: return to list view
 		m.viewMode = ViewList
@@ -301,6 +351,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var newForm *editFormModel
 				newForm, cmd = m.editForm.Update(msg)
 				m.editForm = newForm
+				return m, cmd
+			}
+		case ViewMove:
+			if m.moveForm != nil {
+				var newForm *moveFormModel
+				newForm, cmd = m.moveForm.Update(msg)
+				m.moveForm = newForm
 				return m, cmd
 			}
 		case ViewInfo:
@@ -480,6 +537,22 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.editForm = editForm
 				m.viewMode = ViewEdit
+				return m, textinput.Blink
+			}
+		}
+	case "m":
+		if !m.searchMode && !m.deleteMode {
+			// Move the selected host to another config file
+			selected := m.table.SelectedRow()
+			if len(selected) > 0 {
+				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
+				moveForm, err := NewMoveForm(hostName, m.styles, m.width, m.height, m.configFile)
+				if err != nil {
+					// Handle error - could show in UI, e.g., no other config files available
+					return m, nil
+				}
+				m.moveForm = moveForm
+				m.viewMode = ViewMove
 				return m, textinput.Blink
 			}
 		}

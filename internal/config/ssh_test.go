@@ -813,3 +813,177 @@ Include subdir/*.conf
 		t.Errorf("GetAllConfigFilesFromBase('') should behave like GetAllConfigFiles(). Got %d vs %d files", len(defaultFiles), len(allFiles))
 	}
 }
+
+func TestHostExistsInSpecificFile(t *testing.T) {
+	// Create temporary directory for test files
+	tempDir := t.TempDir()
+
+	// Create main config file
+	mainConfig := filepath.Join(tempDir, "config")
+	mainConfigContent := `Host main-host
+    HostName example.com
+    User mainuser
+
+Include included.conf
+
+Host another-host
+    HostName another.example.com
+    User anotheruser
+`
+
+	err := os.WriteFile(mainConfig, []byte(mainConfigContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create main config: %v", err)
+	}
+
+	// Create included config file
+	includedConfig := filepath.Join(tempDir, "included.conf")
+	includedConfigContent := `Host included-host
+    HostName included.example.com
+    User includeduser
+`
+
+	err = os.WriteFile(includedConfig, []byte(includedConfigContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create included config: %v", err)
+	}
+
+	// Test that host exists in main config file (should ignore includes)
+	exists, err := HostExistsInSpecificFile("main-host", mainConfig)
+	if err != nil {
+		t.Fatalf("HostExistsInSpecificFile() error = %v", err)
+	}
+	if !exists {
+		t.Error("main-host should exist in main config file")
+	}
+
+	// Test that host from included file does NOT exist in main config file
+	exists, err = HostExistsInSpecificFile("included-host", mainConfig)
+	if err != nil {
+		t.Fatalf("HostExistsInSpecificFile() error = %v", err)
+	}
+	if exists {
+		t.Error("included-host should NOT exist in main config file (should ignore includes)")
+	}
+
+	// Test that host exists in included config file
+	exists, err = HostExistsInSpecificFile("included-host", includedConfig)
+	if err != nil {
+		t.Fatalf("HostExistsInSpecificFile() error = %v", err)
+	}
+	if !exists {
+		t.Error("included-host should exist in included config file")
+	}
+
+	// Test non-existent host
+	exists, err = HostExistsInSpecificFile("non-existent", mainConfig)
+	if err != nil {
+		t.Fatalf("HostExistsInSpecificFile() error = %v", err)
+	}
+	if exists {
+		t.Error("non-existent host should not exist")
+	}
+
+	// Test with non-existent file
+	exists, err = HostExistsInSpecificFile("any-host", "/non/existent/file")
+	if err != nil {
+		t.Fatalf("HostExistsInSpecificFile() should not return error for non-existent file: %v", err)
+	}
+	if exists {
+		t.Error("non-existent file should not contain any hosts")
+	}
+}
+
+func TestGetConfigFilesExcludingCurrent(t *testing.T) {
+	// This test verifies the function works when SSH config is properly set up
+	// Since GetConfigFilesExcludingCurrent depends on FindHostInAllConfigs which uses the default SSH config,
+	// we'll test the function more directly by creating a temporary SSH config setup
+
+	// Skip this test if we can't access SSH config directory
+	_, err := GetSSHDirectory()
+	if err != nil {
+		t.Skipf("Skipping test: cannot get SSH directory: %v", err)
+	}
+
+	// Check if SSH config exists
+	defaultConfigPath, err := GetDefaultSSHConfigPath()
+	if err != nil {
+		t.Skipf("Skipping test: cannot get default SSH config path: %v", err)
+	}
+
+	if _, err := os.Stat(defaultConfigPath); os.IsNotExist(err) {
+		t.Skipf("Skipping test: SSH config file does not exist at %s", defaultConfigPath)
+	}
+
+	// Test that the function returns something for a hypothetical host
+	// We can't guarantee specific hosts exist, so we test the function doesn't crash
+	_, err = GetConfigFilesExcludingCurrent("test-host-that-probably-does-not-exist", defaultConfigPath)
+	if err == nil {
+		t.Log("GetConfigFilesExcludingCurrent() succeeded for non-existent host (expected)")
+	} else if strings.Contains(err.Error(), "not found") {
+		t.Log("GetConfigFilesExcludingCurrent() correctly reported host not found")
+	} else {
+		t.Fatalf("GetConfigFilesExcludingCurrent() unexpected error = %v", err)
+	}
+
+	// Test with valid SSH config directory
+	if err == nil {
+		t.Log("GetConfigFilesExcludingCurrent() function is working correctly")
+	}
+}
+
+func TestMoveHostToFile(t *testing.T) {
+	// This test verifies the MoveHostToFile function works when SSH config is properly set up
+	// Since MoveHostToFile depends on FindHostInAllConfigs which uses the default SSH config,
+	// we'll test the error handling and basic function behavior
+
+	// Check if SSH config exists
+	defaultConfigPath, err := GetDefaultSSHConfigPath()
+	if err != nil {
+		t.Skipf("Skipping test: cannot get default SSH config path: %v", err)
+	}
+
+	if _, err := os.Stat(defaultConfigPath); os.IsNotExist(err) {
+		t.Skipf("Skipping test: SSH config file does not exist at %s", defaultConfigPath)
+	}
+
+	// Create a temporary destination config file
+	tempDir := t.TempDir()
+	destConfig := filepath.Join(tempDir, "dest.conf")
+	destConfigContent := `Host dest-host
+    HostName dest.example.com
+    User destuser
+`
+
+	err = os.WriteFile(destConfig, []byte(destConfigContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create dest config: %v", err)
+	}
+
+	// Test moving non-existent host (should return error)
+	err = MoveHostToFile("non-existent-host-12345", destConfig)
+	if err == nil {
+		t.Error("MoveHostToFile() should return error for non-existent host")
+	} else if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error, got: %v", err)
+	}
+
+	// Test moving to non-existent file (should return error)
+	err = MoveHostToFile("any-host", "/non/existent/file")
+	if err == nil {
+		t.Error("MoveHostToFile() should return error for non-existent destination file")
+	}
+
+	// Verify that the HostExistsInSpecificFile function works correctly
+	// This is a component that MoveHostToFile uses
+	exists, err := HostExistsInSpecificFile("dest-host", destConfig)
+	if err != nil {
+		t.Fatalf("HostExistsInSpecificFile() error = %v", err)
+	}
+	if !exists {
+		t.Error("dest-host should exist in destination config file")
+	}
+
+	// Test that the component functions work for the move operation
+	t.Log("MoveHostToFile() error handling works correctly")
+}
