@@ -178,12 +178,13 @@ func (m *Model) updateTableHeight() {
 	// Calculate dynamic table height based on terminal size
 	// Layout breakdown:
 	// - ASCII title: 5 lines (1 empty + 4 text lines)
+	// - Update banner : 1 line (if present)
 	// - Search bar: 1 line
 	// - Help text: 1 line
 	// - App margins/spacing: 3 lines
 	// - Safety margin: 3 lines (to ensure UI elements are always visible)
-	// Total reserved: 13 lines minimum to preserve essential UI elements
-	reservedHeight := 13
+	// Total reserved: 14 lines minimum to preserve essential UI elements
+	reservedHeight := 14
 	availableHeight := m.height - reservedHeight
 	hostCount := len(m.table.Rows())
 

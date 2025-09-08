@@ -8,14 +8,17 @@ import (
 
 	"github.com/Gu1llaum-3/sshm/internal/config"
 	"github.com/Gu1llaum-3/sshm/internal/connectivity"
+	"github.com/Gu1llaum-3/sshm/internal/version"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Messages for SSH ping functionality
+// Messages for SSH ping functionality and version checking
 type (
-	pingResultMsg *connectivity.HostPingResult
+	pingResultMsg   *connectivity.HostPingResult
+	versionCheckMsg *version.UpdateInfo
+	versionErrorMsg error
 )
 
 // startPingAllCmd creates a command to ping all hosts concurrently
@@ -49,12 +52,33 @@ func pingSingleHostCmd(pingManager *connectivity.PingManager, host config.SSHHos
 	}
 }
 
+// checkVersionCmd creates a command to check for version updates
+func checkVersionCmd(currentVersion string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		updateInfo, err := version.CheckForUpdates(ctx, currentVersion)
+		if err != nil {
+			return versionErrorMsg(err)
+		}
+		return versionCheckMsg(updateInfo)
+	}
+}
+
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		textinput.Blink,
-		// Ping is now optional - use 'p' key to start ping
-	)
+	var cmds []tea.Cmd
+
+	// Basic initialization commands
+	cmds = append(cmds, textinput.Blink)
+
+	// Check for version updates if we have a current version
+	if m.currentVersion != "" {
+		cmds = append(cmds, checkVersionCmd(m.currentVersion))
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // Update handles model updates
@@ -113,6 +137,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Update the table to reflect the new ping status
 			m.updateTableRows()
 		}
+		return m, nil
+
+	case versionCheckMsg:
+		// Handle version check result
+		if msg != nil {
+			m.updateInfo = msg
+		}
+		return m, nil
+
+	case versionErrorMsg:
+		// Handle version check error (silently - not critical)
+		// We don't want to show error messages for version checks
+		// as it might disrupt the user experience
 		return m, nil
 
 	case addFormSubmitMsg:
