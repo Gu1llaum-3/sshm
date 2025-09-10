@@ -68,10 +68,12 @@ jobs:
       run: |
         mkdir -p dist
         VERSION=${GITHUB_REF#refs/tags/}
+        # Remove 'v' prefix if present for version injection
+        VERSION_CLEAN=${VERSION#v}
         if [ "${{ matrix.goos }}" = "windows" ]; then
-          go build -ldflags="-s -w -X github.com/Gu1llaum-3/sshm/cmd.version=${VERSION}" -o dist/sshm-${{ matrix.suffix }}.exe .
+          go build -ldflags="-s -w -X github.com/Gu1llaum-3/sshm/cmd.version=${VERSION_CLEAN}" -o dist/sshm-${{ matrix.suffix }}.exe .
         else
-          go build -ldflags="-s -w -X github.com/Gu1llaum-3/sshm/cmd.version=${VERSION}" -o dist/sshm-${{ matrix.suffix }} .
+          go build -ldflags="-s -w -X github.com/Gu1llaum-3/sshm/cmd.version=${VERSION_CLEAN}" -o dist/sshm-${{ matrix.suffix }} .
         fi
 
     - name: Create archive
@@ -116,7 +118,7 @@ jobs:
     - name: Check if pre-release
       id: check_prerelease
       run: |
-        if [[ "${GITHUB_REF#refs/tags/}" == *"-beta"* ]] || [[ "${GITHUB_REF#refs/tags/}" == *"-alpha"* ]] || [[ "${GITHUB_REF#refs/tags/}" == *"-rc"* ]]; then
+        if [[ "${GITHUB_REF#refs/tags/}" == *"-beta"* ]] || [[ "${GITHUB_REF#refs/tags/}" == *"-alpha"* ]] || [[ "${GITHUB_REF#refs/tags/}" == *"-rc"* ]] || [[ "${GITHUB_REF#refs/tags/}" == *"-dev"* ]]; then
           echo "is_prerelease=true" >> $GITHUB_OUTPUT
         else
           echo "is_prerelease=false" >> $GITHUB_OUTPUT
