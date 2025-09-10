@@ -4,6 +4,7 @@ import (
 	"github.com/Gu1llaum-3/sshm/internal/config"
 	"github.com/Gu1llaum-3/sshm/internal/connectivity"
 	"github.com/Gu1llaum-3/sshm/internal/history"
+	"github.com/Gu1llaum-3/sshm/internal/version"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -77,6 +78,10 @@ type Model struct {
 	pingManager    *connectivity.PingManager
 	sortMode       SortMode
 	configFile     string // Path to the SSH config file
+
+	// Version update information
+	updateInfo     *version.UpdateInfo
+	currentVersion string
 
 	// View management
 	viewMode         ViewMode
