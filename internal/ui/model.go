@@ -37,6 +37,7 @@ const (
 	ViewList ViewMode = iota
 	ViewAdd
 	ViewEdit
+	ViewMove
 	ViewInfo
 	ViewPortForward
 	ViewHelp
@@ -87,6 +88,7 @@ type Model struct {
 	viewMode         ViewMode
 	addForm          *addFormModel
 	editForm         *editFormModel
+	moveForm         *moveFormModel
 	infoForm         *infoFormModel
 	portForwardForm  *portForwardModel
 	helpForm         *helpModel
