@@ -36,7 +36,7 @@ func TestSearchCommand(t *testing.T) {
 func TestSearchCommandRegistration(t *testing.T) {
 	// Check that search command is registered with root command
 	found := false
-	for _, cmd := range rootCmd.Commands() {
+	for _, cmd := range RootCmd.Commands() {
 		if cmd.Name() == "search" {
 			found = true
 			break

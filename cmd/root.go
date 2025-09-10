@@ -15,13 +15,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// appVersion will be set at build time via -ldflags
-var appVersion = "dev"
+// AppVersion will be set at build time via -ldflags
+var AppVersion = "dev"
 
 // configFile holds the path to the SSH config file
 var configFile string
 
-var rootCmd = &cobra.Command{
+// RootCmd is the base command when called without any subcommands
+var RootCmd = &cobra.Command{
 	Use:   "sshm",
 	Short: "SSH Manager - A modern SSH connection manager",
 	Long: `SSHM is a modern SSH manager for your terminal.
@@ -32,7 +33,7 @@ Main usage:
 You can also use sshm in CLI mode for direct operations.
 
 Hosts are read from your ~/.ssh/config file by default.`,
-	Version: appVersion,
+	Version: AppVersion,
 	Run: func(cmd *cobra.Command, args []string) {
 		// If no arguments provided, run interactive mode
 		if len(args) == 0 {
@@ -88,7 +89,7 @@ func runInteractiveMode() {
 	}
 
 	// Run the interactive TUI
-	if err := ui.RunInteractiveMode(hosts, configFile, appVersion); err != nil {
+	if err := ui.RunInteractiveMode(hosts, configFile, AppVersion); err != nil {
 		log.Fatalf("Error running interactive mode: %v", err)
 	}
 }
@@ -141,13 +142,13 @@ func connectToHost(hostName string) {
 
 // getVersionWithUpdateCheck returns a custom version string with update check
 func getVersionWithUpdateCheck() string {
-	versionText := fmt.Sprintf("sshm version %s", appVersion)
+	versionText := fmt.Sprintf("sshm version %s", AppVersion)
 
 	// Check for updates
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	updateInfo, err := version.CheckForUpdates(ctx, appVersion)
+	updateInfo, err := version.CheckForUpdates(ctx, AppVersion)
 	if err != nil {
 		// Return just version if check fails
 		return versionText + "\n"
@@ -165,7 +166,7 @@ func getVersionWithUpdateCheck() string {
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := RootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -173,8 +174,8 @@ func Execute() {
 
 func init() {
 	// Add the config file flag
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "SSH config file to use (default: ~/.ssh/config)")
+	RootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "SSH config file to use (default: ~/.ssh/config)")
 
 	// Set custom version template with update check
-	rootCmd.SetVersionTemplate(getVersionWithUpdateCheck())
+	RootCmd.SetVersionTemplate(getVersionWithUpdateCheck())
 }

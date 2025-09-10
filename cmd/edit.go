@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/Gu1llaum-3/sshm/internal/ui"
 
 	"github.com/spf13/cobra"
@@ -23,5 +24,5 @@ var editCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(editCmd)
+	RootCmd.AddCommand(editCmd)
 }

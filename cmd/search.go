@@ -235,7 +235,7 @@ func escapeJSON(s string) string {
 
 func init() {
 	// Add search command to root
-	rootCmd.AddCommand(searchCmd)
+	RootCmd.AddCommand(searchCmd)
 
 	// Add flags
 	searchCmd.Flags().StringVarP(&outputFormat, "format", "f", "table", "Output format (table, json, simple)")

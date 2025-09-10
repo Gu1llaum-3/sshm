@@ -8,27 +8,28 @@ import (
 
 func TestRootCommand(t *testing.T) {
 	// Test that the root command is properly configured
-	if rootCmd.Use != "sshm" {
-		t.Errorf("Expected Use 'sshm', got '%s'", rootCmd.Use)
+	if RootCmd.Use != "sshm" {
+		t.Errorf("Expected Use 'sshm', got '%s'", RootCmd.Use)
 	}
 
-	if rootCmd.Short != "SSH Manager - A modern SSH connection manager" {
-		t.Errorf("Expected Short description, got '%s'", rootCmd.Short)
+	if RootCmd.Short != "SSH Manager - A modern SSH connection manager" {
+		t.Errorf("Expected Short description, got '%s'", RootCmd.Short)
 	}
 
-	if rootCmd.Version != version {
-		t.Errorf("Expected Version '%s', got '%s'", version, rootCmd.Version)
+	if RootCmd.Version != AppVersion {
+		t.Errorf("Expected Version '%s', got '%s'", AppVersion, RootCmd.Version)
 	}
 }
 
 func TestRootCommandFlags(t *testing.T) {
 	// Test that persistent flags are properly configured
-	flags := rootCmd.PersistentFlags()
+	flags := RootCmd.PersistentFlags()
 
 	// Check config flag
 	configFlag := flags.Lookup("config")
 	if configFlag == nil {
 		t.Error("Expected --config flag to be defined")
+		return
 	}
 	if configFlag.Shorthand != "c" {
 		t.Errorf("Expected config flag shorthand 'c', got '%s'", configFlag.Shorthand)
@@ -40,7 +41,7 @@ func TestRootCommandSubcommands(t *testing.T) {
 	// Note: completion and help are automatically added by Cobra and may not always appear in Commands()
 	expectedCommands := []string{"add", "edit", "search"}
 
-	commands := rootCmd.Commands()
+	commands := RootCmd.Commands()
 	commandNames := make(map[string]bool)
 	for _, cmd := range commands {
 		commandNames[cmd.Name()] = true
@@ -61,11 +62,11 @@ func TestRootCommandSubcommands(t *testing.T) {
 func TestRootCommandHelp(t *testing.T) {
 	// Test help output
 	buf := new(bytes.Buffer)
-	rootCmd.SetOut(buf)
-	rootCmd.SetArgs([]string{"--help"})
+	RootCmd.SetOut(buf)
+	RootCmd.SetArgs([]string{"--help"})
 
 	// This should not return an error for help
-	err := rootCmd.Execute()
+	err := RootCmd.Execute()
 	if err != nil {
 		t.Errorf("Expected no error for help command, got %v", err)
 	}
@@ -82,16 +83,16 @@ func TestRootCommandHelp(t *testing.T) {
 func TestRootCommandVersion(t *testing.T) {
 	// Test that version command executes without error
 	// Note: Cobra handles version output internally, so we just check for no error
-	rootCmd.SetArgs([]string{"--version"})
+	RootCmd.SetArgs([]string{"--version"})
 
 	// This should not return an error for version
-	err := rootCmd.Execute()
+	err := RootCmd.Execute()
 	if err != nil {
 		t.Errorf("Expected no error for version command, got %v", err)
 	}
 
 	// Reset args for other tests
-	rootCmd.SetArgs([]string{})
+	RootCmd.SetArgs([]string{})
 }
 
 func TestExecuteFunction(t *testing.T) {
@@ -124,8 +125,8 @@ func TestConfigFileVariable(t *testing.T) {
 	defer func() { configFile = originalConfigFile }()
 
 	// Set config file through flag
-	rootCmd.SetArgs([]string{"--config", "/tmp/test-config"})
-	rootCmd.ParseFlags([]string{"--config", "/tmp/test-config"})
+	RootCmd.SetArgs([]string{"--config", "/tmp/test-config"})
+	RootCmd.ParseFlags([]string{"--config", "/tmp/test-config"})
 
 	// The configFile variable should be updated by the flag parsing
 	// Note: This test verifies the flag binding works
@@ -133,12 +134,12 @@ func TestConfigFileVariable(t *testing.T) {
 
 func TestVersionVariable(t *testing.T) {
 	// Test that version variable has a default value
-	if version == "" {
-		t.Error("version variable should have a default value")
+	if AppVersion == "" {
+		t.Error("AppVersion variable should have a default value")
 	}
 
 	// Test that version is set to "dev" by default
-	if version != "dev" {
-		t.Logf("version is set to '%s' (expected 'dev' for development)", version)
+	if AppVersion != "dev" {
+		t.Logf("AppVersion is set to '%s' (expected 'dev' for development)", AppVersion)
 	}
 }
