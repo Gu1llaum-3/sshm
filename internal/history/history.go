@@ -30,12 +30,23 @@ type HistoryManager struct {
 
 // NewHistoryManager creates a new history manager
 func NewHistoryManager() (*HistoryManager, error) {
-	homeDir, err := os.UserHomeDir()
+	configDir, err := config.GetSSHMConfigDir()
 	if err != nil {
 		return nil, err
 	}
 
-	historyPath := filepath.Join(homeDir, ".ssh", "sshm_history.json")
+	// Ensure config dir exists
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return nil, err
+	}
+
+	historyPath := filepath.Join(configDir, "sshm_history.json")
+
+	// Migration: check if old history file exists and migrate it
+	if err := migrateOldHistoryFile(historyPath); err != nil {
+		// Don't fail if migration fails, just log it
+		// In a production environment, you might want to log this properly
+	}
 
 	hm := &HistoryManager{
 		historyPath: historyPath,
@@ -52,6 +63,46 @@ func NewHistoryManager() (*HistoryManager, error) {
 	}
 
 	return hm, nil
+}
+
+// migrateOldHistoryFile migrates the old history file from ~/.ssh to ~/.config/sshm
+// TODO: Remove this migration logic in v2.0.0 (introduced in v1.6.0)
+func migrateOldHistoryFile(newHistoryPath string) error {
+	// Check if new file already exists, skip migration
+	if _, err := os.Stat(newHistoryPath); err == nil {
+		return nil // New file exists, no migration needed
+	}
+
+	// Get old history file path - use same logic as SSH config location
+	sshDir, err := config.GetSSHDirectory()
+	if err != nil {
+		return err
+	}
+	oldHistoryPath := filepath.Join(sshDir, "sshm_history.json")
+
+	// Check if old file exists
+	if _, err := os.Stat(oldHistoryPath); os.IsNotExist(err) {
+		return nil // Old file doesn't exist, nothing to migrate
+	}
+
+	// Read old file
+	data, err := os.ReadFile(oldHistoryPath)
+	if err != nil {
+		return err
+	}
+
+	// Write to new location
+	if err := os.WriteFile(newHistoryPath, data, 0644); err != nil {
+		return err
+	}
+
+	// Remove old file only if write was successful
+	if err := os.Remove(oldHistoryPath); err != nil {
+		// Don't fail if we can't remove the old file
+		// The migration was successful even if cleanup failed
+	}
+
+	return nil
 }
 
 // loadHistory loads the connection history from the JSON file

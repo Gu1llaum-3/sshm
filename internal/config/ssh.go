@@ -40,8 +40,8 @@ func GetDefaultSSHConfigPath() (string, error) {
 	}
 }
 
-// GetSSHMBackupDir returns the SSHM backup directory
-func GetSSHMBackupDir() (string, error) {
+// GetSSHMConfigDir returns the SSHM config directory
+func GetSSHMConfigDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -67,6 +67,15 @@ func GetSSHMBackupDir() (string, error) {
 		}
 	}
 
+	return configDir, nil
+}
+
+// GetSSHMBackupDir returns the SSHM backup directory
+func GetSSHMBackupDir() (string, error) {
+	configDir, err := GetSSHMConfigDir()
+	if err != nil {
+		return "", err
+	}
 	return filepath.Join(configDir, "backups"), nil
 }
 

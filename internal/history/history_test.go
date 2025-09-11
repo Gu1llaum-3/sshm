@@ -1,6 +1,7 @@
 package history
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -92,5 +93,72 @@ func TestHistoryManager_GetConnectionCount(t *testing.T) {
 	count := hm.GetConnectionCount("testhost-count")
 	if count != 3 {
 		t.Errorf("Expected connection count 3, got %d", count)
+	}
+}
+
+func TestMigrateOldHistoryFile(t *testing.T) {
+	// This test verifies that migration doesn't fail when called
+	// The actual migration logic will be tested in integration tests
+
+	tempDir := t.TempDir()
+	newHistoryPath := filepath.Join(tempDir, "sshm_history.json")
+
+	// Test that migration works when no old file exists (common case)
+	if err := migrateOldHistoryFile(newHistoryPath); err != nil {
+		t.Errorf("migrateOldHistoryFile() with no old file error = %v", err)
+	}
+
+	// Test that migration skips when new file already exists
+	if err := os.WriteFile(newHistoryPath, []byte(`{"connections":{}}`), 0644); err != nil {
+		t.Fatalf("Failed to write new history file: %v", err)
+	}
+
+	if err := migrateOldHistoryFile(newHistoryPath); err != nil {
+		t.Errorf("migrateOldHistoryFile() with existing new file error = %v", err)
+	}
+
+	// File should be unchanged
+	data, err := os.ReadFile(newHistoryPath)
+	if err != nil {
+		t.Errorf("Failed to read new file: %v", err)
+	}
+	if string(data) != `{"connections":{}}` {
+		t.Error("New file was modified when it shouldn't have been")
+	}
+}
+
+func TestMigrateOldHistoryFile_NoOldFile(t *testing.T) {
+	// Test migration when no old file exists
+	tempDir := t.TempDir()
+	newHistoryPath := filepath.Join(tempDir, "sshm_history.json")
+
+	// Should not return error when old file doesn't exist
+	if err := migrateOldHistoryFile(newHistoryPath); err != nil {
+		t.Errorf("migrateOldHistoryFile() with no old file error = %v", err)
+	}
+}
+
+func TestMigrateOldHistoryFile_NewFileExists(t *testing.T) {
+	// Test migration when new file already exists (should skip migration)
+	tempDir := t.TempDir()
+	newHistoryPath := filepath.Join(tempDir, "sshm_history.json")
+
+	// Create new file first
+	if err := os.WriteFile(newHistoryPath, []byte(`{"connections":{}}`), 0644); err != nil {
+		t.Fatalf("Failed to write new history file: %v", err)
+	}
+
+	// Migration should skip when new file exists
+	if err := migrateOldHistoryFile(newHistoryPath); err != nil {
+		t.Errorf("migrateOldHistoryFile() with existing new file error = %v", err)
+	}
+
+	// New file should be unchanged
+	data, err := os.ReadFile(newHistoryPath)
+	if err != nil {
+		t.Errorf("Failed to read new file: %v", err)
+	}
+	if string(data) != `{"connections":{}}` {
+		t.Error("New file was modified when it shouldn't have been")
 	}
 }
