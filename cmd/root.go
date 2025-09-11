@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Gu1llaum-3/sshm/internal/config"
+	"github.com/Gu1llaum-3/sshm/internal/history"
 	"github.com/Gu1llaum-3/sshm/internal/ui"
 	"github.com/Gu1llaum-3/sshm/internal/version"
 
@@ -23,27 +26,32 @@ var configFile string
 
 // RootCmd is the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "sshm",
+	Use:   "sshm [host]",
 	Short: "SSH Manager - A modern SSH connection manager",
 	Long: `SSHM is a modern SSH manager for your terminal.
 
 Main usage:
   Running 'sshm' (without arguments) opens the interactive TUI window to browse, search, and connect to your SSH hosts graphically.
+  Running 'sshm <host>' connects directly to the specified host and records the connection in your history.
 
-You can also use sshm in CLI mode for direct operations.
+You can also use sshm in CLI mode for other operations like adding, editing, or searching hosts.
 
 Hosts are read from your ~/.ssh/config file by default.`,
-	Version: AppVersion,
-	Run: func(cmd *cobra.Command, args []string) {
+	Version:       AppVersion,
+	Args:          cobra.ArbitraryArgs,
+	SilenceUsage:  true,
+	SilenceErrors: true, // We'll handle errors ourselves
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// If no arguments provided, run interactive mode
 		if len(args) == 0 {
 			runInteractiveMode()
-			return
+			return nil
 		}
 
 		// If a host name is provided, connect directly
 		hostName := args[0]
 		connectToHost(hostName)
+		return nil
 	},
 }
 
@@ -124,20 +132,46 @@ func connectToHost(hostName string) {
 		os.Exit(1)
 	}
 
-	// Connect to the host
-	fmt.Printf("Connecting to %s...\n", hostName)
-
-	// Build the SSH command with the appropriate config file
-	var sshCmd []string
-	if configFile != "" {
-		sshCmd = []string{"ssh", "-F", configFile, hostName}
+	// Record the connection in history
+	historyManager, err := history.NewHistoryManager()
+	if err != nil {
+		// Log the error but don't prevent the connection
+		fmt.Printf("Warning: Could not initialize connection history: %v\n", err)
 	} else {
-		sshCmd = []string{"ssh", hostName}
+		err = historyManager.RecordConnection(hostName)
+		if err != nil {
+			// Log the error but don't prevent the connection
+			fmt.Printf("Warning: Could not record connection history: %v\n", err)
+		}
 	}
 
-	// Note: In a real implementation, you'd use exec.Command here
-	// For now, just print the command that would be executed
-	fmt.Printf("%s\n", strings.Join(sshCmd, " "))
+	// Build and execute the SSH command
+	fmt.Printf("Connecting to %s...\n", hostName)
+
+	var sshCmd *exec.Cmd
+	if configFile != "" {
+		sshCmd = exec.Command("ssh", "-F", configFile, hostName)
+	} else {
+		sshCmd = exec.Command("ssh", hostName)
+	}
+
+	// Set up the command to use the same stdin, stdout, and stderr as the parent process
+	sshCmd.Stdin = os.Stdin
+	sshCmd.Stdout = os.Stdout
+	sshCmd.Stderr = os.Stderr
+
+	// Execute the SSH command
+	err = sshCmd.Run()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			// SSH command failed, exit with the same code
+			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+				os.Exit(status.ExitStatus())
+			}
+		}
+		fmt.Printf("Error executing SSH command: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 // getVersionWithUpdateCheck returns a custom version string with update check
@@ -166,7 +200,20 @@ func getVersionWithUpdateCheck() string {
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
+	// Custom error handling for unknown commands that might be host names
 	if err := RootCmd.Execute(); err != nil {
+		// Check if this is an "unknown command" error and the argument might be a host name
+		errStr := err.Error()
+		if strings.Contains(errStr, "unknown command") {
+			// Extract the command name from the error
+			parts := strings.Split(errStr, "\"")
+			if len(parts) >= 2 {
+				potentialHost := parts[1]
+				// Try to connect to this as a host
+				connectToHost(potentialHost)
+				return
+			}
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

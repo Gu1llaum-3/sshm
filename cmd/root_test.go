@@ -8,8 +8,8 @@ import (
 
 func TestRootCommand(t *testing.T) {
 	// Test that the root command is properly configured
-	if RootCmd.Use != "sshm" {
-		t.Errorf("Expected Use 'sshm', got '%s'", RootCmd.Use)
+	if RootCmd.Use != "sshm [host]" {
+		t.Errorf("Expected Use 'sshm [host]', got '%s'", RootCmd.Use)
 	}
 
 	if RootCmd.Short != "SSH Manager - A modern SSH connection manager" {
