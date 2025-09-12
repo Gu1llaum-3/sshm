@@ -15,11 +15,21 @@ type ConnectionHistory struct {
 	Connections map[string]ConnectionInfo `json:"connections"`
 }
 
+// PortForwardConfig stores port forwarding configuration
+type PortForwardConfig struct {
+	Type        string `json:"type"` // "local", "remote", "dynamic"
+	LocalPort   string `json:"local_port"`
+	RemoteHost  string `json:"remote_host"`
+	RemotePort  string `json:"remote_port"`
+	BindAddress string `json:"bind_address"`
+}
+
 // ConnectionInfo stores information about a specific connection
 type ConnectionInfo struct {
-	HostName     string    `json:"host_name"`
-	LastConnect  time.Time `json:"last_connect"`
-	ConnectCount int       `json:"connect_count"`
+	HostName       string             `json:"host_name"`
+	LastConnect    time.Time          `json:"last_connect"`
+	ConnectCount   int                `json:"connect_count"`
+	PortForwarding *PortForwardConfig `json:"port_forwarding,omitempty"`
 }
 
 // HistoryManager manages the connection history
@@ -256,4 +266,43 @@ func (hm *HistoryManager) GetAllConnectionsInfo() []ConnectionInfo {
 	})
 
 	return connections
+}
+
+// RecordPortForwarding saves port forwarding configuration for a host
+func (hm *HistoryManager) RecordPortForwarding(hostName, forwardType, localPort, remoteHost, remotePort, bindAddress string) error {
+	now := time.Now()
+
+	portForwardConfig := &PortForwardConfig{
+		Type:        forwardType,
+		LocalPort:   localPort,
+		RemoteHost:  remoteHost,
+		RemotePort:  remotePort,
+		BindAddress: bindAddress,
+	}
+
+	if conn, exists := hm.history.Connections[hostName]; exists {
+		// Update existing connection
+		conn.LastConnect = now
+		conn.ConnectCount++
+		conn.PortForwarding = portForwardConfig
+		hm.history.Connections[hostName] = conn
+	} else {
+		// Create new connection record
+		hm.history.Connections[hostName] = ConnectionInfo{
+			HostName:       hostName,
+			LastConnect:    now,
+			ConnectCount:   1,
+			PortForwarding: portForwardConfig,
+		}
+	}
+
+	return hm.saveHistory()
+}
+
+// GetPortForwardingConfig retrieves the last used port forwarding configuration for a host
+func (hm *HistoryManager) GetPortForwardingConfig(hostName string) *PortForwardConfig {
+	if conn, exists := hm.history.Connections[hostName]; exists {
+		return conn.PortForwarding
+	}
+	return nil
 }

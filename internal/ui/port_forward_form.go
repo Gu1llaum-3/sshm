@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Gu1llaum-3/sshm/internal/history"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -20,15 +21,16 @@ const (
 )
 
 type portForwardModel struct {
-	inputs      []textinput.Model
-	focused     int
-	forwardType PortForwardType
-	hostName    string
-	err         string
-	styles      Styles
-	width       int
-	height      int
-	configFile  string
+	inputs         []textinput.Model
+	focused        int
+	forwardType    PortForwardType
+	hostName       string
+	err            string
+	styles         Styles
+	width          int
+	height         int
+	configFile     string
+	historyManager *history.HistoryManager
 }
 
 // portForwardSubmitMsg is sent when the port forward form is submitted
@@ -41,7 +43,7 @@ type portForwardSubmitMsg struct {
 type portForwardCancelMsg struct{}
 
 // NewPortForwardForm creates a new port forward form model
-func NewPortForwardForm(hostName string, styles Styles, width, height int, configFile string) *portForwardModel {
+func NewPortForwardForm(hostName string, styles Styles, width, height int, configFile string, historyManager *history.HistoryManager) *portForwardModel {
 	inputs := make([]textinput.Model, 5)
 
 	// Forward type input (display only, controlled by arrow keys)
@@ -49,7 +51,6 @@ func NewPortForwardForm(hostName string, styles Styles, width, height int, confi
 	inputs[pfTypeInput].Placeholder = "Use ←/→ to change forward type"
 	inputs[pfTypeInput].Focus()
 	inputs[pfTypeInput].Width = 40
-	inputs[pfTypeInput].SetValue("Local (-L)")
 
 	// Local port input
 	inputs[pfLocalPortInput] = textinput.New()
@@ -77,15 +78,19 @@ func NewPortForwardForm(hostName string, styles Styles, width, height int, confi
 	inputs[pfBindAddressInput].Width = 30
 
 	pf := &portForwardModel{
-		inputs:      inputs,
-		focused:     0,
-		forwardType: LocalForward,
-		hostName:    hostName,
-		styles:      styles,
-		width:       width,
-		height:      height,
-		configFile:  configFile,
+		inputs:         inputs,
+		focused:        0,
+		forwardType:    LocalForward,
+		hostName:       hostName,
+		styles:         styles,
+		width:          width,
+		height:         height,
+		configFile:     configFile,
+		historyManager: historyManager,
 	}
+
+	// Load previous port forwarding configuration if available
+	pf.loadPreviousConfig()
 
 	// Initialize input visibility
 	pf.updateInputVisibility()
@@ -370,6 +375,11 @@ func (m *portForwardModel) submitForm() tea.Cmd {
 			return portForwardSubmitMsg{err: fmt.Errorf("invalid port number"), sshArgs: nil}
 		}
 
+		// Get form values for saving to history
+		remoteHost := strings.TrimSpace(m.inputs[pfRemoteHostInput].Value())
+		remotePort := strings.TrimSpace(m.inputs[pfRemotePortInput].Value())
+		bindAddress := strings.TrimSpace(m.inputs[pfBindAddressInput].Value())
+
 		// Build SSH command with port forwarding
 		var sshArgs []string
 
@@ -379,13 +389,10 @@ func (m *portForwardModel) submitForm() tea.Cmd {
 		}
 
 		// Add forwarding arguments
-		bindAddress := strings.TrimSpace(m.inputs[pfBindAddressInput].Value())
-
+		var forwardTypeStr string
 		switch m.forwardType {
 		case LocalForward:
-			remoteHost := strings.TrimSpace(m.inputs[pfRemoteHostInput].Value())
-			remotePort := strings.TrimSpace(m.inputs[pfRemotePortInput].Value())
-
+			forwardTypeStr = "local"
 			if remoteHost == "" {
 				remoteHost = "localhost"
 			}
@@ -408,31 +415,30 @@ func (m *portForwardModel) submitForm() tea.Cmd {
 			sshArgs = append(sshArgs, "-L", forwardArg)
 
 		case RemoteForward:
-			localHost := strings.TrimSpace(m.inputs[pfRemoteHostInput].Value())
-			localPortStr := strings.TrimSpace(m.inputs[pfRemotePortInput].Value())
-
-			if localHost == "" {
-				localHost = "localhost"
+			forwardTypeStr = "remote"
+			if remoteHost == "" {
+				remoteHost = "localhost"
 			}
-			if localPortStr == "" {
+			if remotePort == "" {
 				return portForwardSubmitMsg{err: fmt.Errorf("local port is required for remote forwarding"), sshArgs: nil}
 			}
 
 			// Validate local port
-			if _, err := strconv.Atoi(localPortStr); err != nil {
+			if _, err := strconv.Atoi(remotePort); err != nil {
 				return portForwardSubmitMsg{err: fmt.Errorf("invalid local port number"), sshArgs: nil}
 			}
 
 			// Build -R argument (note: localPort is actually the remote port in this context)
 			var forwardArg string
 			if bindAddress != "" {
-				forwardArg = fmt.Sprintf("%s:%s:%s:%s", bindAddress, localPort, localHost, localPortStr)
+				forwardArg = fmt.Sprintf("%s:%s:%s:%s", bindAddress, localPort, remoteHost, remotePort)
 			} else {
-				forwardArg = fmt.Sprintf("%s:%s:%s", localPort, localHost, localPortStr)
+				forwardArg = fmt.Sprintf("%s:%s:%s", localPort, remoteHost, remotePort)
 			}
 			sshArgs = append(sshArgs, "-R", forwardArg)
 
 		case DynamicForward:
+			forwardTypeStr = "dynamic"
 			// Build -D argument
 			var forwardArg string
 			if bindAddress != "" {
@@ -441,6 +447,21 @@ func (m *portForwardModel) submitForm() tea.Cmd {
 				forwardArg = localPort
 			}
 			sshArgs = append(sshArgs, "-D", forwardArg)
+		}
+
+		// Save port forwarding configuration to history
+		if m.historyManager != nil {
+			if err := m.historyManager.RecordPortForwarding(
+				m.hostName,
+				forwardTypeStr,
+				localPort,
+				remoteHost,
+				remotePort,
+				bindAddress,
+			); err != nil {
+				// Log the error but don't fail the connection
+				// In a production environment, you might want to handle this differently
+			}
 		}
 
 		// Add hostname
@@ -487,4 +508,48 @@ func (m *portForwardModel) getPrevValidField(currentField int) int {
 		}
 	}
 	return -1
+}
+
+// loadPreviousConfig loads the previous port forwarding configuration for this host
+func (m *portForwardModel) loadPreviousConfig() {
+	if m.historyManager == nil {
+		m.inputs[pfTypeInput].SetValue("Local (-L)")
+		return
+	}
+
+	config := m.historyManager.GetPortForwardingConfig(m.hostName)
+	if config == nil {
+		m.inputs[pfTypeInput].SetValue("Local (-L)")
+		return
+	}
+
+	// Set forward type based on saved configuration
+	switch config.Type {
+	case "local":
+		m.forwardType = LocalForward
+	case "remote":
+		m.forwardType = RemoteForward
+	case "dynamic":
+		m.forwardType = DynamicForward
+	default:
+		m.forwardType = LocalForward
+	}
+	m.inputs[pfTypeInput].SetValue(m.forwardType.String())
+
+	// Set values from saved configuration
+	if config.LocalPort != "" {
+		m.inputs[pfLocalPortInput].SetValue(config.LocalPort)
+	}
+	if config.RemoteHost != "" {
+		m.inputs[pfRemoteHostInput].SetValue(config.RemoteHost)
+	} else if m.forwardType != DynamicForward {
+		// Default to localhost for local and remote forwarding if not set
+		m.inputs[pfRemoteHostInput].SetValue("localhost")
+	}
+	if config.RemotePort != "" {
+		m.inputs[pfRemotePortInput].SetValue(config.RemotePort)
+	}
+	if config.BindAddress != "" {
+		m.inputs[pfBindAddressInput].SetValue(config.BindAddress)
+	}
 }
