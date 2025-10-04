@@ -553,6 +553,34 @@ This will be automatically converted to:
     StrictHostKeyChecking no
 ```
 
+### Custom Key Bindings
+
+SSHM supports customizable key bindings through a configuration file. This is particularly useful for users who want to modify the default quit behavior.
+
+**Configuration File Location:**
+- **Linux/macOS**: `~/.config/sshm/config.json`
+- **Windows**: `%APPDATA%\sshm\config.json`
+
+**Example Configuration:**
+```json
+{
+  "key_bindings": {
+    "quit_keys": ["q", "ctrl+c"],
+    "disable_esc_quit": true
+  }
+}
+```
+
+**Available Options:**
+- **quit_keys**: Array of keys that will quit the application. Default: `["q", "ctrl+c"]`
+- **disable_esc_quit**: Boolean flag to disable ESC key from quitting the application. Default: `false`
+
+**For Vim Users:**
+If you frequently press ESC accidentally causing the application to quit, set `disable_esc_quit` to `true`. This will disable ESC as a quit key while preserving all other functionality.
+
+**Default Configuration:**
+If no configuration file exists, SSHM will automatically create one with default settings that maintain backward compatibility.
+
 ## 🛠️ Development
 
 ### Prerequisites
@@ -669,6 +697,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Charm](https://charm.sh/) for the amazing TUI libraries
 - [Cobra](https://cobra.dev/) for the excellent CLI framework
 - [@yimeng](https://github.com/yimeng) for contributing SSH Include directive support
+- [@ldreux](https://github.com/ldreux) for contributing multi-word search functionality
+- [@qingfengzxr](https://github.com/qingfengzxr) for contributing custom key bindings support
 - The Go community for building such fantastic tools
 
 ---
