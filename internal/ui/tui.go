@@ -17,6 +17,15 @@ import (
 
 // NewModel creates a new TUI model with the given SSH hosts
 func NewModel(hosts []config.SSHHost, configFile, currentVersion string) Model {
+	// Load application configuration
+	appConfig, err := config.LoadAppConfig()
+	if err != nil {
+		// Log the error but continue with default configuration
+		fmt.Printf("Warning: Could not load application config: %v, using defaults\n", err)
+		defaultConfig := config.GetDefaultAppConfig()
+		appConfig = &defaultConfig
+	}
+
 	// Initialize the history manager
 	historyManager, err := history.NewHistoryManager()
 	if err != nil {
@@ -39,6 +48,7 @@ func NewModel(hosts []config.SSHHost, configFile, currentVersion string) Model {
 		sortMode:       SortByName,
 		configFile:     configFile,
 		currentVersion: currentVersion,
+		appConfig:      appConfig,
 		styles:         styles,
 		width:          80,
 		height:         24,

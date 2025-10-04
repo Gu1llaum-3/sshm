@@ -80,6 +80,9 @@ type Model struct {
 	sortMode       SortMode
 	configFile     string // Path to the SSH config file
 
+	// Application configuration
+	appConfig      *config.AppConfig
+
 	// Version update information
 	updateInfo     *version.UpdateInfo
 	currentVersion string

@@ -445,8 +445,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	key := msg.String()
 
-	switch msg.String() {
+	switch key {
 	case "esc", "ctrl+c":
 		if m.deleteMode {
 			// Exit delete mode
@@ -455,10 +456,16 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.table.Focus()
 			return m, nil
 		}
-		return m, tea.Quit
+		// Use configurable key bindings for quit
+		if m.appConfig != nil && m.appConfig.KeyBindings.ShouldQuitOnKey(key) {
+			return m, tea.Quit
+		}
 	case "q":
 		if !m.searchMode && !m.deleteMode {
-			return m, tea.Quit
+			// Use configurable key bindings for quit
+			if m.appConfig != nil && m.appConfig.KeyBindings.ShouldQuitOnKey(key) {
+				return m, tea.Quit
+			}
 		}
 	case "/", "ctrl+f":
 		if !m.searchMode && !m.deleteMode {
