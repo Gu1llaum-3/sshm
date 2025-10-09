@@ -394,9 +394,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case ViewEdit:
 			if m.editForm != nil {
-				var newForm *editFormModel
-				newForm, cmd = m.editForm.Update(msg)
-				m.editForm = newForm
+				var updatedModel tea.Model
+				updatedModel, cmd = m.editForm.Update(msg)
+				m.editForm = updatedModel.(*editFormModel)
 				return m, cmd
 			}
 		case ViewMove:

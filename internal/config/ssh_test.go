@@ -987,3 +987,458 @@ func TestMoveHostToFile(t *testing.T) {
 	// Test that the component functions work for the move operation
 	t.Log("MoveHostToFile() error handling works correctly")
 }
+
+func TestParseSSHConfigWithMultipleHostsOnSameLine(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configFile := filepath.Join(tempDir, "config")
+	configContent := `# Test multiple hosts on same line
+Host local1 local2
+    HostName ::1
+    User myuser
+
+Host root-server
+    User root
+    HostName root.example.com
+
+Host web1 web2 web3
+    HostName ::1
+    User webuser
+    Port 8080
+
+Host single-host
+    HostName single.example.com
+    User singleuser
+`
+
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	hosts, err := ParseSSHConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+
+	// Should get 7 hosts: local1, local2, root-server, web1, web2, web3, single-host
+	expectedHosts := map[string]struct{}{
+		"local1":      {},
+		"local2":      {},
+		"root-server": {},
+		"web1":        {},
+		"web2":        {},
+		"web3":        {},
+		"single-host": {},
+	}
+
+	if len(hosts) != len(expectedHosts) {
+		t.Errorf("Expected %d hosts, got %d", len(expectedHosts), len(hosts))
+		for _, host := range hosts {
+			t.Logf("Found host: %s", host.Name)
+		}
+	}
+
+	hostMap := make(map[string]SSHHost)
+	for _, host := range hosts {
+		hostMap[host.Name] = host
+	}
+
+	for expectedHostName := range expectedHosts {
+		if _, found := hostMap[expectedHostName]; !found {
+			t.Errorf("Expected host %s not found", expectedHostName)
+		}
+	}
+
+	// Verify properties based on host name
+	if host, found := hostMap["local1"]; found {
+		if host.Hostname != "::1" || host.User != "myuser" {
+			t.Errorf("local1 properties incorrect: hostname=%s, user=%s", host.Hostname, host.User)
+		}
+	}
+
+	if host, found := hostMap["local2"]; found {
+		if host.Hostname != "::1" || host.User != "myuser" {
+			t.Errorf("local2 properties incorrect: hostname=%s, user=%s", host.Hostname, host.User)
+		}
+	}
+
+	if host, found := hostMap["web1"]; found {
+		if host.Hostname != "::1" || host.User != "webuser" || host.Port != "8080" {
+			t.Errorf("web1 properties incorrect: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	if host, found := hostMap["web2"]; found {
+		if host.Hostname != "::1" || host.User != "webuser" || host.Port != "8080" {
+			t.Errorf("web2 properties incorrect: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	if host, found := hostMap["web3"]; found {
+		if host.Hostname != "::1" || host.User != "webuser" || host.Port != "8080" {
+			t.Errorf("web3 properties incorrect: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	if host, found := hostMap["root-server"]; found {
+		if host.User != "root" || host.Hostname != "root.example.com" {
+			t.Errorf("root-server properties incorrect: user=%s, hostname=%s", host.User, host.Hostname)
+		}
+	}
+}
+
+func TestUpdateSSHHostInFileWithMultiHost(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configFile := filepath.Join(tempDir, "config")
+	configContent := `# Test config with multi-host
+Host web1 web2 web3
+    HostName webserver.example.com
+    User webuser
+    Port 2222
+
+Host database
+    HostName db.example.com
+    User dbuser
+`
+
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	// Update web2 in the multi-host line
+	newHost := SSHHost{
+		Name:     "web2-updated",
+		Hostname: "newweb.example.com",
+		User:     "newuser",
+		Port:     "22",
+	}
+
+	err = UpdateSSHHostInFile("web2", newHost, configFile)
+	if err != nil {
+		t.Fatalf("UpdateSSHHostInFile() error = %v", err)
+	}
+
+	// Parse the updated config
+	hosts, err := ParseSSHConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+
+	// Should have: web1, web3, web2-updated, database
+	expectedHosts := []string{"web1", "web3", "web2-updated", "database"}
+
+	hostMap := make(map[string]SSHHost)
+	for _, host := range hosts {
+		hostMap[host.Name] = host
+	}
+
+	if len(hosts) != len(expectedHosts) {
+		t.Errorf("Expected %d hosts, got %d", len(expectedHosts), len(hosts))
+		for _, host := range hosts {
+			t.Logf("Found host: %s", host.Name)
+		}
+	}
+
+	for _, expectedHostName := range expectedHosts {
+		if _, found := hostMap[expectedHostName]; !found {
+			t.Errorf("Expected host %s not found", expectedHostName)
+		}
+	}
+
+	// Verify web1 and web3 still have original properties
+	if host, found := hostMap["web1"]; found {
+		if host.Hostname != "webserver.example.com" || host.User != "webuser" || host.Port != "2222" {
+			t.Errorf("web1 properties changed: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	if host, found := hostMap["web3"]; found {
+		if host.Hostname != "webserver.example.com" || host.User != "webuser" || host.Port != "2222" {
+			t.Errorf("web3 properties changed: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	// Verify web2-updated has new properties
+	if host, found := hostMap["web2-updated"]; found {
+		if host.Hostname != "newweb.example.com" || host.User != "newuser" || host.Port != "22" {
+			t.Errorf("web2-updated properties incorrect: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	// Verify database is unchanged
+	if host, found := hostMap["database"]; found {
+		if host.Hostname != "db.example.com" || host.User != "dbuser" {
+			t.Errorf("database properties changed: hostname=%s, user=%s", host.Hostname, host.User)
+		}
+	}
+}
+
+func TestIsPartOfMultiHostDeclaration(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configFile := filepath.Join(tempDir, "config")
+	configContent := `Host single
+    HostName single.example.com
+
+Host multi1 multi2 multi3
+    HostName multi.example.com
+
+Host another
+    HostName another.example.com
+`
+
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	tests := []struct {
+		hostName      string
+		expectedMulti bool
+		expectedHosts []string
+	}{
+		{"single", false, []string{"single"}},
+		{"multi1", true, []string{"multi1", "multi2", "multi3"}},
+		{"multi2", true, []string{"multi1", "multi2", "multi3"}},
+		{"multi3", true, []string{"multi1", "multi2", "multi3"}},
+		{"another", false, []string{"another"}},
+		{"nonexistent", false, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.hostName, func(t *testing.T) {
+			isMulti, hostNames, err := IsPartOfMultiHostDeclaration(tt.hostName, configFile)
+			if err != nil {
+				t.Fatalf("IsPartOfMultiHostDeclaration() error = %v", err)
+			}
+
+			if isMulti != tt.expectedMulti {
+				t.Errorf("Expected isMulti=%v, got %v", tt.expectedMulti, isMulti)
+			}
+
+			if tt.expectedHosts == nil && hostNames != nil {
+				t.Errorf("Expected hostNames to be nil, got %v", hostNames)
+			} else if tt.expectedHosts != nil {
+				if len(hostNames) != len(tt.expectedHosts) {
+					t.Errorf("Expected %d hostNames, got %d", len(tt.expectedHosts), len(hostNames))
+				} else {
+					for i, expectedHost := range tt.expectedHosts {
+						if i < len(hostNames) && hostNames[i] != expectedHost {
+							t.Errorf("Expected hostNames[%d]=%s, got %s", i, expectedHost, hostNames[i])
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDeleteSSHHostFromFileWithMultiHost(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configFile := filepath.Join(tempDir, "config")
+	configContent := `# Test config with multi-host deletion
+Host web1 web2 web3
+    HostName webserver.example.com
+    User webuser
+    Port 2222
+
+Host database
+    HostName db.example.com
+    User dbuser
+
+# Tags: production, critical
+Host app1 app2
+    HostName appserver.example.com
+    User appuser
+`
+
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	// Test 1: Delete one host from multi-host block (should keep others)
+	err = DeleteSSHHostFromFile("web2", configFile)
+	if err != nil {
+		t.Fatalf("DeleteSSHHostFromFile() error = %v", err)
+	}
+
+	// Parse the updated config
+	hosts, err := ParseSSHConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+
+	// Should have: web1, web3, database, app1, app2 (web2 removed)
+	expectedHosts := []string{"web1", "web3", "database", "app1", "app2"}
+
+	hostMap := make(map[string]SSHHost)
+	for _, host := range hosts {
+		hostMap[host.Name] = host
+	}
+
+	if len(hosts) != len(expectedHosts) {
+		t.Errorf("Expected %d hosts, got %d", len(expectedHosts), len(hosts))
+		for _, host := range hosts {
+			t.Logf("Found host: %s", host.Name)
+		}
+	}
+
+	for _, expectedHostName := range expectedHosts {
+		if _, found := hostMap[expectedHostName]; !found {
+			t.Errorf("Expected host %s not found", expectedHostName)
+		}
+	}
+
+	// Verify web2 is not present
+	if _, found := hostMap["web2"]; found {
+		t.Error("web2 should have been deleted")
+	}
+
+	// Verify web1 and web3 still have original properties
+	if host, found := hostMap["web1"]; found {
+		if host.Hostname != "webserver.example.com" || host.User != "webuser" || host.Port != "2222" {
+			t.Errorf("web1 properties incorrect: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	if host, found := hostMap["web3"]; found {
+		if host.Hostname != "webserver.example.com" || host.User != "webuser" || host.Port != "2222" {
+			t.Errorf("web3 properties incorrect: hostname=%s, user=%s, port=%s", host.Hostname, host.User, host.Port)
+		}
+	}
+
+	// Test 2: Delete one host from multi-host block with tags
+	err = DeleteSSHHostFromFile("app1", configFile)
+	if err != nil {
+		t.Fatalf("DeleteSSHHostFromFile() error = %v", err)
+	}
+
+	// Parse again
+	hosts, err = ParseSSHConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+
+	// Should have: web1, web3, database, app2 (app1 removed)
+	expectedHosts = []string{"web1", "web3", "database", "app2"}
+
+	hostMap = make(map[string]SSHHost)
+	for _, host := range hosts {
+		hostMap[host.Name] = host
+	}
+
+	if len(hosts) != len(expectedHosts) {
+		t.Errorf("Expected %d hosts, got %d", len(expectedHosts), len(hosts))
+		for _, host := range hosts {
+			t.Logf("Found host: %s", host.Name)
+		}
+	}
+
+	// Verify app2 still has tags
+	if host, found := hostMap["app2"]; found {
+		if !contains(host.Tags, "production") || !contains(host.Tags, "critical") {
+			t.Errorf("app2 tags incorrect: %v", host.Tags)
+		}
+	}
+}
+
+func TestUpdateMultiHostBlock(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configFile := filepath.Join(tempDir, "config")
+	configContent := `# Test config for multi-host block update
+Host server1 server2 server3
+    HostName cluster.example.com
+    User clusteruser
+    Port 2222
+
+Host single
+    HostName single.example.com
+    User singleuser
+`
+
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	// Update the multi-host block
+	originalHosts := []string{"server1", "server2", "server3"}
+	newHosts := []string{"server1", "server4", "server5"} // Remove server2, server3 and add server4, server5
+	commonProperties := SSHHost{
+		Hostname: "newcluster.example.com",
+		User:     "newuser",
+		Port:     "22",
+		Tags:     []string{"updated", "cluster"},
+	}
+
+	err = UpdateMultiHostBlock(originalHosts, newHosts, commonProperties, configFile)
+	if err != nil {
+		t.Fatalf("UpdateMultiHostBlock() error = %v", err)
+	}
+
+	// Parse the updated config
+	hosts, err := ParseSSHConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+
+	// Should have: server1, server4, server5, single
+	expectedHosts := []string{"server1", "server4", "server5", "single"}
+
+	hostMap := make(map[string]SSHHost)
+	for _, host := range hosts {
+		hostMap[host.Name] = host
+	}
+
+	if len(hosts) != len(expectedHosts) {
+		t.Errorf("Expected %d hosts, got %d", len(expectedHosts), len(hosts))
+		for _, host := range hosts {
+			t.Logf("Found host: %s", host.Name)
+		}
+	}
+
+	// Verify new hosts have updated properties
+	for _, hostName := range []string{"server1", "server4", "server5"} {
+		if host, found := hostMap[hostName]; found {
+			if host.Hostname != "newcluster.example.com" || host.User != "newuser" || host.Port != "22" {
+				t.Errorf("%s properties incorrect: hostname=%s, user=%s, port=%s",
+					hostName, host.Hostname, host.User, host.Port)
+			}
+			if !contains(host.Tags, "updated") || !contains(host.Tags, "cluster") {
+				t.Errorf("%s tags incorrect: %v", hostName, host.Tags)
+			}
+		} else {
+			t.Errorf("Expected host %s not found", hostName)
+		}
+	}
+
+	// Verify single host is unchanged
+	if host, found := hostMap["single"]; found {
+		if host.Hostname != "single.example.com" || host.User != "singleuser" {
+			t.Errorf("single host properties changed: hostname=%s, user=%s", host.Hostname, host.User)
+		}
+	}
+
+	// Verify old hosts are gone
+	for _, oldHost := range []string{"server2", "server3"} {
+		if _, found := hostMap[oldHost]; found {
+			t.Errorf("Old host %s should have been removed", oldHost)
+		}
+	}
+}
+
+// Helper function to check if slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
