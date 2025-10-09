@@ -173,12 +173,17 @@ func (m *editFormModel) addHostInput() tea.Cmd {
 	newInput.Placeholder = "host-name"
 	newInput.Focus()
 
-	// Unfocus current input
+	// Unfocus current input regardless of which area we're in
 	if m.focusArea == focusAreaHosts && m.focused < len(m.hostInputs) {
 		m.hostInputs[m.focused].Blur()
+	} else if m.focusArea == focusAreaProperties && m.focused < len(m.inputs) {
+		m.inputs[m.focused].Blur()
 	}
 
 	m.hostInputs = append(m.hostInputs, newInput)
+
+	// Move focus to the new host input
+	m.focusArea = focusAreaHosts
 	m.focused = len(m.hostInputs) - 1
 
 	return textinput.Blink
@@ -243,11 +248,49 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "esc":
 			m.err = ""
 			m.success = false
-			return m, tea.Quit
+			return m, func() tea.Msg { return editFormCancelMsg{} }
 
 		case "ctrl+s":
 			// Allow submission from any field with Ctrl+S (Save)
 			return m, m.submitEditForm()
+
+		case "tab", "shift+tab", "enter", "up", "down":
+			s := msg.String()
+
+			// Handle form submission
+			totalFields := len(m.hostInputs) + len(m.inputs)
+			currentGlobalIndex := m.focused
+			if m.focusArea == focusAreaProperties {
+				currentGlobalIndex = len(m.hostInputs) + m.focused
+			}
+
+			if s == "enter" && currentGlobalIndex == totalFields-1 {
+				return m, m.submitEditForm()
+			}
+
+			// Cycle inputs
+			if s == "up" || s == "shift+tab" {
+				currentGlobalIndex--
+			} else {
+				currentGlobalIndex++
+			}
+
+			if currentGlobalIndex >= totalFields {
+				currentGlobalIndex = 0
+			} else if currentGlobalIndex < 0 {
+				currentGlobalIndex = totalFields - 1
+			}
+
+			// Update focus area and focused index based on global index
+			if currentGlobalIndex < len(m.hostInputs) {
+				m.focusArea = focusAreaHosts
+				m.focused = currentGlobalIndex
+			} else {
+				m.focusArea = focusAreaProperties
+				m.focused = currentGlobalIndex - len(m.hostInputs)
+			}
+
+			return m, m.updateFocus()
 
 		case "ctrl+a":
 			// Add a new host input
@@ -258,50 +301,6 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focusArea == focusAreaHosts && len(m.hostInputs) > 1 {
 				return m, m.deleteHostInput()
 			}
-
-		case "tab", "shift+tab":
-			// Switch between host area and property area
-			if msg.String() == "shift+tab" {
-				if m.focusArea == focusAreaProperties {
-					m.focusArea = focusAreaHosts
-					m.focused = len(m.hostInputs) - 1
-				} else {
-					m.focusArea = focusAreaProperties
-					m.focused = len(m.inputs) - 1
-				}
-			} else {
-				if m.focusArea == focusAreaHosts {
-					m.focusArea = focusAreaProperties
-					m.focused = 0
-				} else {
-					m.focusArea = focusAreaHosts
-					m.focused = 0
-				}
-			}
-			return m, m.updateFocus()
-
-		case "up", "down", "enter":
-			// Navigate within the current area
-			if m.focusArea == focusAreaHosts {
-				if msg.String() == "up" && m.focused > 0 {
-					m.focused--
-				} else if msg.String() == "down" && m.focused < len(m.hostInputs)-1 {
-					m.focused++
-				} else if msg.String() == "enter" {
-					// Submit form on enter
-					return m, m.submitEditForm()
-				}
-			} else {
-				if msg.String() == "up" && m.focused > 0 {
-					m.focused--
-				} else if msg.String() == "down" && m.focused < len(m.inputs)-1 {
-					m.focused++
-				} else if msg.String() == "enter" {
-					// Submit form on enter
-					return m, m.submitEditForm()
-				}
-			}
-			return m, m.updateFocus()
 		}
 
 	case editFormSubmitMsg:
@@ -406,10 +405,10 @@ func (m *editFormModel) View() string {
 
 	// Show different help based on number of hosts
 	if len(m.hostInputs) > 1 {
-		b.WriteString(m.styles.FormHelp.Render("Tab: switch sections • ↑↓: navigate • Ctrl+A: add host • Ctrl+D: delete host"))
+		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+A: add host • Ctrl+D: delete host"))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(m.styles.FormHelp.Render("Tab: switch sections • ↑↓: navigate • Ctrl+A: add host"))
+		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+A: add host"))
 		b.WriteString("\n")
 	}
 	b.WriteString(m.styles.FormHelp.Render("Ctrl+S: save • Ctrl+C/Esc: cancel • * Required fields"))

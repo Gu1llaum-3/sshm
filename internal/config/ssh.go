@@ -418,6 +418,20 @@ func getMainConfigPath() string {
 	return absPath
 }
 
+// formatSSHConfigValue formats a value for SSH config file, adding quotes if necessary
+func formatSSHConfigValue(value string) string {
+	if value == "" {
+		return value
+	}
+
+	// If the value contains spaces, wrap it in quotes
+	if strings.Contains(value, " ") {
+		return `"` + value + `"`
+	}
+
+	return value
+}
+
 // AddSSHHost adds a new SSH host to the config file
 func AddSSHHost(host SSHHost) error {
 	configPath, err := GetDefaultSSHConfigPath()
@@ -495,7 +509,7 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 	}
 
 	if host.Identity != "" {
-		_, err = file.WriteString(fmt.Sprintf("    IdentityFile %s\n", host.Identity))
+		_, err = file.WriteString(fmt.Sprintf("    IdentityFile %s\n", formatSSHConfigValue(host.Identity)))
 		if err != nil {
 			return err
 		}
@@ -795,7 +809,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 							newLines = append(newLines, "    Port "+newHost.Port)
 						}
 						if newHost.Identity != "" {
-							newLines = append(newLines, "    IdentityFile "+newHost.Identity)
+							newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
 						}
 						if newHost.ProxyJump != "" {
 							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
@@ -843,7 +857,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 							newLines = append(newLines, "    Port "+newHost.Port)
 						}
 						if newHost.Identity != "" {
-							newLines = append(newLines, "    IdentityFile "+newHost.Identity)
+							newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
 						}
 						if newHost.ProxyJump != "" {
 							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
@@ -927,7 +941,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						newLines = append(newLines, "    Port "+newHost.Port)
 					}
 					if newHost.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+newHost.Identity)
+						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
 					}
 					if newHost.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
@@ -975,7 +989,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						newLines = append(newLines, "    Port "+newHost.Port)
 					}
 					if newHost.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+newHost.Identity)
+						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
 					}
 					if newHost.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
@@ -1469,7 +1483,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 						newLines = append(newLines, "    Port "+commonProperties.Port)
 					}
 					if commonProperties.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+commonProperties.Identity)
+						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(commonProperties.Identity))
 					}
 					if commonProperties.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
@@ -1549,7 +1563,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 					newLines = append(newLines, "    Port "+commonProperties.Port)
 				}
 				if commonProperties.Identity != "" {
-					newLines = append(newLines, "    IdentityFile "+commonProperties.Identity)
+					newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(commonProperties.Identity))
 				}
 				if commonProperties.ProxyJump != "" {
 					newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)

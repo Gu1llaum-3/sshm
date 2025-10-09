@@ -1442,3 +1442,109 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
+
+// Helper function to create temporary config files for testing
+func createTempConfigFile(content string) (string, error) {
+	tempFile, err := os.CreateTemp("", "ssh_config_test_*.conf")
+	if err != nil {
+		return "", err
+	}
+	defer tempFile.Close()
+
+	_, err = tempFile.WriteString(content)
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return "", err
+	}
+
+	return tempFile.Name(), nil
+}
+
+func TestFormatSSHConfigValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple path without spaces",
+			input:    "/home/user/.ssh/id_rsa",
+			expected: "/home/user/.ssh/id_rsa",
+		},
+		{
+			name:     "path with spaces",
+			input:    "/home/user/My Documents/ssh key",
+			expected: "\"/home/user/My Documents/ssh key\"",
+		},
+		{
+			name:     "Windows path with spaces",
+			input:    `G:\My Drive\7 - Tech\9 - SSH Keys\Server_WF.opk`,
+			expected: `"G:\My Drive\7 - Tech\9 - SSH Keys\Server_WF.opk"`,
+		},
+		{
+			name:     "path with quotes but no spaces",
+			input:    `/home/user/key"with"quotes`,
+			expected: `/home/user/key"with"quotes`,
+		},
+		{
+			name:     "path with spaces and quotes",
+			input:    `/home/user/key "with" quotes`,
+			expected: `"/home/user/key "with" quotes"`,
+		},
+		{
+			name:     "empty path",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "path with single space at end",
+			input:    "/home/user/key ",
+			expected: "\"/home/user/key \"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatSSHConfigValue(tt.input)
+			if result != tt.expected {
+				t.Errorf("formatSSHConfigValue(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAddSSHHostWithSpacesInPath(t *testing.T) {
+	// Create temporary config file
+	configFile, err := createTempConfigFile(`Host existing
+    HostName existing.com
+`)
+	if err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+	defer os.Remove(configFile)
+
+	// Test adding host with path containing spaces
+	host := SSHHost{
+		Name:     "test-spaces",
+		Hostname: "test.com",
+		User:     "testuser",
+		Identity: "/path/with spaces/key file",
+	}
+
+	err = AddSSHHostToFile(host, configFile)
+	if err != nil {
+		t.Fatalf("AddSSHHostToFile failed: %v", err)
+	}
+
+	// Read the file and verify quotes are added
+	content, err := os.ReadFile(configFile)
+	if err != nil {
+		t.Fatalf("Failed to read config file: %v", err)
+	}
+
+	contentStr := string(content)
+	expectedIdentityLine := `    IdentityFile "/path/with spaces/key file"`
+	if !strings.Contains(contentStr, expectedIdentityLine) {
+		t.Errorf("Expected identity file line with quotes not found.\nContent:\n%s\nExpected line: %s", contentStr, expectedIdentityLine)
+	}
+}
