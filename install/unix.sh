@@ -7,6 +7,7 @@ USE_SUDO="false"
 OS=""
 ARCH=""
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
+SSHM_VERSION="${SSHM_VERSION:-latest}"
 
 RED='\033[0;31m'
 PURPLE='\033[0;35m'
@@ -14,13 +15,27 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+usage() {
+    printf "${PURPLE}SSHM Installation Script${NC}\n\n"
+    printf "Usage:\n"
+    printf "  Default (latest stable):     ${GREEN}bash install.sh${NC}\n"
+    printf "  Specific version:            ${GREEN}SSHM_VERSION=v1.8.0 bash install.sh${NC}\n"
+    printf "  Beta/pre-release:            ${GREEN}SSHM_VERSION=v1.8.1-beta bash install.sh${NC}\n"
+    printf "  Force install:               ${GREEN}FORCE_INSTALL=true bash install.sh${NC}\n"
+    printf "  Custom install directory:    ${GREEN}INSTALL_DIR=/opt/bin bash install.sh${NC}\n\n"
+    printf "Environment variables:\n"
+    printf "  SSHM_VERSION    - Version to install (default: latest)\n"
+    printf "  FORCE_INSTALL   - Skip confirmation prompts (default: false)\n"
+    printf "  INSTALL_DIR     - Installation directory (default: /usr/local/bin)\n\n"
+}
+
 setSystem() {
     ARCH=$(uname -m)
     case $ARCH in
         i386|i686) ARCH="amd64" ;;
         x86_64) ARCH="amd64";;
-        armv6*) ARCH="arm64" ;;
-        armv7*) ARCH="arm64" ;;
+        armv6*) ARCH="armv6" ;;
+        armv7*) ARCH="armv7" ;;
         aarch64*) ARCH="arm64" ;;
         arm64) ARCH="arm64" ;;
     esac
@@ -46,13 +61,25 @@ runAsRoot() {
 }
 
 getLatestVersion() {
-    printf "${YELLOW}Fetching latest version...${NC}\n"
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/Gu1llaum-3/sshm/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$LATEST_VERSION" ]; then
-        printf "${RED}Failed to fetch latest version${NC}\n"
-        exit 1
+    if [ "$SSHM_VERSION" = "latest" ]; then
+        printf "${YELLOW}Fetching latest stable version...${NC}\n"
+        LATEST_VERSION=$(curl -s https://api.github.com/repos/Gu1llaum-3/sshm/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        if [ -z "$LATEST_VERSION" ]; then
+            printf "${RED}Failed to fetch latest version${NC}\n"
+            exit 1
+        fi
+    else
+        printf "${YELLOW}Using specified version: $SSHM_VERSION${NC}\n"
+        # Validate that the specified version exists
+        RELEASE_CHECK=$(curl -s "https://api.github.com/repos/Gu1llaum-3/sshm/releases/tags/$SSHM_VERSION" | grep '"tag_name":')
+        if [ -z "$RELEASE_CHECK" ]; then
+            printf "${RED}Version $SSHM_VERSION not found. Available versions:${NC}\n"
+            curl -s https://api.github.com/repos/Gu1llaum-3/sshm/releases | grep '"tag_name":' | head -10 | sed -E 's/.*"([^"]+)".*/  - \1/'
+            exit 1
+        fi
+        LATEST_VERSION="$SSHM_VERSION"
     fi
-    printf "${GREEN}Latest version: $LATEST_VERSION${NC}\n"
+    printf "${GREEN}Installing version: $LATEST_VERSION${NC}\n"
 }
 
 downloadBinary() {
@@ -70,10 +97,11 @@ downloadBinary() {
         "amd64") GORELEASER_ARCH="x86_64" ;;
         "arm64") GORELEASER_ARCH="arm64" ;;
         "386") GORELEASER_ARCH="i386" ;;
-        "arm") GORELEASER_ARCH="armv6" ;;
+        "armv6") GORELEASER_ARCH="armv6" ;;
+        "armv7") GORELEASER_ARCH="armv7" ;;
     esac
     
-    # GoReleaser format: sshm_Darwin_arm64.tar.gz
+    # GoReleaser format: sshm_Linux_armv7.tar.gz
     GITHUB_FILE="sshm_${GORELEASER_OS}_${GORELEASER_ARCH}.tar.gz"
     GITHUB_URL="https://github.com/Gu1llaum-3/sshm/releases/download/$LATEST_VERSION/$GITHUB_FILE"
     
@@ -176,17 +204,23 @@ checkExisting() {
 }
 
 main() {
-    printf "${PURPLE}Installing SSHM - SSH Connection Manager${NC}\n\n"
+    # Check for help argument
+    if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ "$1" = "help" ]; then
+        usage
+        exit 0
+    fi
     
-    # Check if already installed
-    checkExisting
+    printf "${PURPLE}Installing SSHM - SSH Connection Manager${NC}\n\n"
     
     # Set up system detection
     setSystem
     printf "${GREEN}Detected system: $OS ($ARCH)${NC}\n"
     
-    # Get latest version
+    # Get and validate version FIRST (this can fail early)
     getLatestVersion
+    
+    # Check if already installed (this might prompt user)
+    checkExisting
     
     # Download and install
     downloadBinary
