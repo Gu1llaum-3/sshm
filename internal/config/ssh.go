@@ -399,6 +399,11 @@ func processIncludeDirective(pattern string, baseConfigPath string, processedFil
 			continue
 		}
 
+		// Skip common non-SSH config file types
+		if isNonSSHConfigFile(match) {
+			continue
+		}
+
 		// Recursively parse the included file
 		hosts, err := parseSSHConfigFileWithProcessedFiles(match, processedFiles)
 		if err != nil {
@@ -409,6 +414,82 @@ func processIncludeDirective(pattern string, baseConfigPath string, processedFil
 	}
 
 	return allHosts, nil
+}
+
+// isNonSSHConfigFile checks if a file should be excluded from SSH config parsing
+func isNonSSHConfigFile(filePath string) bool {
+	fileName := strings.ToLower(filepath.Base(filePath))
+
+	// Skip common documentation files
+	if fileName == "readme" || fileName == "readme.txt" {
+		return true
+	}
+
+	// Skip files with common non-config extensions
+	excludedExtensions := []string{
+		".txt", ".md", ".rst", ".doc", ".docx", ".pdf",
+		".log", ".tmp", ".bak", ".old", ".orig",
+		".json", ".xml", ".yaml", ".yml", ".toml",
+		".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd",
+		".py", ".pl", ".rb", ".js", ".php", ".go", ".c", ".cpp",
+		".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg",
+		".zip", ".tar", ".gz", ".bz2", ".xz",
+	}
+
+	for _, ext := range excludedExtensions {
+		if strings.HasSuffix(fileName, ext) {
+			return true
+		}
+	}
+
+	// Skip hidden files (starting with .)
+	if strings.HasPrefix(fileName, ".") {
+		return true
+	}
+
+	// Additional check: if file contains common non-SSH content indicators
+	// This is a more expensive check, so we do it last
+	if hasNonSSHContent(filePath) {
+		return true
+	}
+
+	return false
+}
+
+// hasNonSSHContent performs a quick content check to identify non-SSH files
+func hasNonSSHContent(filePath string) bool {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return false // If we can't read it, don't exclude it
+	}
+	defer file.Close()
+
+	// Read only the first few KB to check content
+	buffer := make([]byte, 2048)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return false
+	}
+
+	content := strings.ToLower(string(buffer[:n]))
+
+	// Check for common non-SSH file indicators
+	nonSSHIndicators := []string{
+		"<!doctype", "<html>", "<xml>", "<?xml",
+		"#!/bin/", "#!/usr/bin/",
+		"# readme", "# documentation", "# license",
+		"package main", "function ", "class ", "def ",
+		"import ", "require ", "#include",
+		"SELECT ", "INSERT ", "UPDATE ", "DELETE ",
+	}
+
+	for _, indicator := range nonSSHIndicators {
+		if strings.Contains(content, indicator) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // getMainConfigPath returns the main SSH config path for comparison
@@ -675,6 +756,131 @@ func GetSSHHostFromFile(hostName string, configPath string) (*SSHHost, error) {
 		}
 	}
 	return nil, fmt.Errorf("host '%s' not found", hostName)
+}
+
+// QuickHostExists performs a fast check if a host exists without full parsing
+// This is optimized for connection scenarios where we just need to verify existence
+func QuickHostExists(hostName string) (bool, error) {
+	configPath, err := GetDefaultSSHConfigPath()
+	if err != nil {
+		return false, err
+	}
+	return QuickHostExistsInFile(hostName, configPath)
+}
+
+// QuickHostExistsInFile performs a fast check if a host exists in config files
+// This stops parsing as soon as the host is found, making it much faster for connection scenarios
+func QuickHostExistsInFile(hostName string, configPath string) (bool, error) {
+	return quickHostSearchInFile(hostName, configPath, make(map[string]bool))
+}
+
+// quickHostSearchInFile performs optimized host search with early termination
+func quickHostSearchInFile(hostName string, configPath string, processedFiles map[string]bool) (bool, error) {
+	// Resolve absolute path to prevent infinite recursion
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve absolute path for %s: %w", configPath, err)
+	}
+
+	// Check for circular includes
+	if processedFiles[absPath] {
+		return false, nil // Skip already processed files silently
+	}
+	processedFiles[absPath] = true
+
+	// Check if the file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return false, nil // File doesn't exist, host not found
+	}
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Ignore empty lines and comments (except includes)
+		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "# Tags:")) {
+			continue
+		}
+
+		// Split line into words
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		key := strings.ToLower(parts[0])
+		value := strings.Join(parts[1:], " ")
+
+		switch key {
+		case "include":
+			// Handle Include directive - search in included files
+			if found, err := quickSearchInclude(hostName, value, configPath, processedFiles); err == nil && found {
+				return true, nil // Found in included file
+			}
+		case "host":
+			// Parse multiple host names from the Host line
+			hostNames := strings.Fields(value)
+
+			// Check if our target host is in this Host declaration
+			for _, candidateHostName := range hostNames {
+				// Skip hosts with wildcards (*, ?) as they are typically patterns
+				if !strings.ContainsAny(candidateHostName, "*?") && candidateHostName == hostName {
+					return true, nil // Found the host!
+				}
+			}
+		}
+	}
+
+	return false, scanner.Err()
+}
+
+// quickSearchInclude handles Include directives during quick host search
+func quickSearchInclude(hostName, pattern, baseConfigPath string, processedFiles map[string]bool) (bool, error) {
+	// Expand tilde to home directory
+	if strings.HasPrefix(pattern, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return false, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		pattern = filepath.Join(homeDir, pattern[1:])
+	}
+
+	// If pattern is not absolute, make it relative to the base config directory
+	if !filepath.IsAbs(pattern) {
+		baseDir := filepath.Dir(baseConfigPath)
+		pattern = filepath.Join(baseDir, pattern)
+	}
+
+	// Use glob to find matching files
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return false, fmt.Errorf("failed to glob pattern %s: %w", pattern, err)
+	}
+
+	for _, match := range matches {
+		// Skip directories
+		if info, err := os.Stat(match); err == nil && info.IsDir() {
+			continue
+		}
+
+		// Skip non-SSH config files (this avoids parsing README, etc.)
+		if isNonSSHConfigFile(match) {
+			continue
+		}
+
+		// Search in the included file
+		if found, err := quickHostSearchInFile(hostName, match, processedFiles); err == nil && found {
+			return true, nil // Found in this included file
+		}
+	}
+
+	return false, nil
 }
 
 // UpdateSSHHost updates an existing SSH host configuration

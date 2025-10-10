@@ -1548,3 +1548,149 @@ func TestAddSSHHostWithSpacesInPath(t *testing.T) {
 		t.Errorf("Expected identity file line with quotes not found.\nContent:\n%s\nExpected line: %s", contentStr, expectedIdentityLine)
 	}
 }
+
+func TestIsNonSSHConfigFile(t *testing.T) {
+	tests := []struct {
+		fileName string
+		expected bool
+	}{
+		// Should be excluded
+		{"README", true},
+		{"README.txt", true},
+		{"README.md", true},
+		{"script.sh", true},
+		{"data.json", true},
+		{"notes.txt", true},
+		{".gitignore", true},
+		{"backup.bak", true},
+		{"old.orig", true},
+		{"log.log", true},
+		{"temp.tmp", true},
+		{"archive.zip", true},
+		{"image.jpg", true},
+		{"python.py", true},
+		{"golang.go", true},
+		{"config.yaml", true},
+		{"config.yml", true},
+		{"config.toml", true},
+
+		// Should NOT be excluded (valid SSH config files)
+		{"config", false},
+		{"servers.conf", false},
+		{"production", false},
+		{"staging", false},
+		{"hosts", false},
+		{"ssh_config", false},
+		{"work-servers", false},
+	}
+
+	for _, test := range tests {
+		// Create a temporary file for content testing
+		tempDir := t.TempDir()
+		filePath := filepath.Join(tempDir, test.fileName)
+
+		// Write appropriate content based on expected result
+		var content string
+		if test.expected {
+			// Write non-SSH content for files that should be excluded
+			content = "# This is not an SSH config file\nSome random content"
+		} else {
+			// Write SSH-like content for files that should be included
+			content = "Host example\n    HostName example.com\n    User testuser"
+		}
+
+		err := os.WriteFile(filePath, []byte(content), 0600)
+		if err != nil {
+			t.Fatalf("Failed to create test file %s: %v", test.fileName, err)
+		}
+
+		result := isNonSSHConfigFile(filePath)
+		if result != test.expected {
+			t.Errorf("isNonSSHConfigFile(%q) = %v, want %v", test.fileName, result, test.expected)
+		}
+	}
+}
+
+func TestQuickHostExists(t *testing.T) {
+	// Create temporary directory for test files
+	tempDir := t.TempDir()
+
+	// Create main config file
+	mainConfig := filepath.Join(tempDir, "config")
+	mainConfigContent := `Host main-host
+    HostName example.com
+
+Include config.d/*
+
+Host another-host
+    HostName another.example.com
+`
+
+	err := os.WriteFile(mainConfig, []byte(mainConfigContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create main config: %v", err)
+	}
+
+	// Create config.d directory
+	configDir := filepath.Join(tempDir, "config.d")
+	err = os.MkdirAll(configDir, 0700)
+	if err != nil {
+		t.Fatalf("Failed to create config.d: %v", err)
+	}
+
+	// Create valid SSH config file in config.d
+	validConfig := filepath.Join(configDir, "servers.conf")
+	validConfigContent := `Host included-host
+    HostName included.example.com
+    User includeduser
+
+Host production-server
+    HostName prod.example.com
+    User produser
+`
+
+	err = os.WriteFile(validConfig, []byte(validConfigContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create valid config: %v", err)
+	}
+
+	// Create files that should be excluded (README, etc.)
+	excludedFiles := map[string]string{
+		"README":    "# This is a README file\nDocumentation goes here",
+		"README.md": "# SSH Configuration\nThis directory contains...",
+		"script.sh": "#!/bin/bash\necho 'hello world'",
+		"data.json": `{"key": "value"}`,
+	}
+
+	for fileName, content := range excludedFiles {
+		filePath := filepath.Join(configDir, fileName)
+		err = os.WriteFile(filePath, []byte(content), 0600)
+		if err != nil {
+			t.Fatalf("Failed to create %s: %v", fileName, err)
+		}
+	}
+
+	// Test hosts that should be found
+	existingHosts := []string{"main-host", "another-host", "included-host", "production-server"}
+	for _, hostName := range existingHosts {
+		found, err := QuickHostExistsInFile(hostName, mainConfig)
+		if err != nil {
+			t.Errorf("QuickHostExistsInFile(%q) error = %v", hostName, err)
+		}
+		if !found {
+			t.Errorf("QuickHostExistsInFile(%q) = false, want true", hostName)
+		}
+	}
+
+	// Test hosts that should NOT be found
+	nonExistingHosts := []string{"nonexistent-host", "fake-server", "unknown"}
+	for _, hostName := range nonExistingHosts {
+		found, err := QuickHostExistsInFile(hostName, mainConfig)
+		if err != nil {
+			t.Errorf("QuickHostExistsInFile(%q) error = %v", hostName, err)
+		}
+		if found {
+			t.Errorf("QuickHostExistsInFile(%q) = true, want false", hostName)
+		}
+	}
+}

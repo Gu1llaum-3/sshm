@@ -103,27 +103,18 @@ func runInteractiveMode() {
 }
 
 func connectToHost(hostName string) {
-	// Parse SSH configurations to verify host exists
-	var hosts []config.SSHHost
+	// Quick check if host exists without full parsing (optimized for connection)
+	var hostFound bool
 	var err error
 
 	if configFile != "" {
-		hosts, err = config.ParseSSHConfigFile(configFile)
+		hostFound, err = config.QuickHostExistsInFile(hostName, configFile)
 	} else {
-		hosts, err = config.ParseSSHConfig()
+		hostFound, err = config.QuickHostExists(hostName)
 	}
 
 	if err != nil {
-		log.Fatalf("Error reading SSH config file: %v", err)
-	}
-
-	// Check if host exists
-	var hostFound bool
-	for _, host := range hosts {
-		if host.Name == hostName {
-			hostFound = true
-			break
-		}
+		log.Fatalf("Error checking SSH config: %v", err)
 	}
 
 	if !hostFound {
