@@ -107,20 +107,31 @@ release:
   header: |
     ## SSHM {{.Version}}
 
-    Thank you for downloading SSHM! 
+    Thank you for downloading SSHM!
 
-    ### Installation
+  footer: |
+    ## Installation
 
-    **Homebrew (macOS/Linux):**
+    ### Homebrew (macOS/Linux)
     ```bash
     brew tap Gu1llaum-3/sshm
     brew install sshm
     ```
 
-    **Manual Installation:**
-    Download the appropriate binary for your platform from the assets below.
+    ### Installation Script (Recommended)
+    **Unix/Linux/macOS:**
+    ```bash
+    curl -sSL https://github.com/Gu1llaum-3/sshm/raw/main/install/unix.sh | bash
+    ```
 
-  footer: |
+    **Windows (PowerShell):**
+    ```powershell
+    iwr -useb https://github.com/Gu1llaum-3/sshm/raw/main/install/windows.ps1 | iex
+    ```
+
+    ### Manual Installation
+    Download the appropriate binary for your platform from the assets above, extract it, and place it in your PATH.
+
     ## Full Changelog
 
     See all changes at https://github.com/Gu1llaum-3/sshm/compare/{{.PreviousTag}}...{{.Tag}}
