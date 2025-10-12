@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 type addFormModel struct {
 	inputs     []textinput.Model
 	focused    int
+	currentTab int // 0 = General, 1 = Advanced
 	err        string
 	styles     Styles
 	success    bool
@@ -116,6 +118,7 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 	return &addFormModel{
 		inputs:     inputs,
 		focused:    nameInput,
+		currentTab: tabGeneral, // Start on General tab
 		styles:     styles,
 		width:      width,
 		height:     height,
@@ -124,14 +127,20 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 }
 
 const (
+	tabGeneral = iota
+	tabAdvanced
+)
+
+const (
 	nameInput = iota
 	hostnameInput
 	userInput
 	portInput
 	identityInput
 	proxyJumpInput
-	optionsInput
 	tagsInput
+	// Advanced tab inputs
+	optionsInput
 	remoteCommandInput
 	requestTTYInput
 )
@@ -167,36 +176,20 @@ func (m *addFormModel) Update(msg tea.Msg) (*addFormModel, tea.Cmd) {
 			// Allow submission from any field with Ctrl+S (Save)
 			return m, m.submitForm()
 
+		case "ctrl+j":
+			// Switch to next tab
+			m.currentTab = (m.currentTab + 1) % 2
+			m.focused = m.getFirstInputForTab(m.currentTab)
+			return m, m.updateFocus()
+
+		case "ctrl+k":
+			// Switch to previous tab
+			m.currentTab = (m.currentTab - 1 + 2) % 2
+			m.focused = m.getFirstInputForTab(m.currentTab)
+			return m, m.updateFocus()
+
 		case "tab", "shift+tab", "enter", "up", "down":
-			s := msg.String()
-
-			// Handle form submission
-			if s == "enter" && m.focused == len(m.inputs)-1 {
-				return m, m.submitForm()
-			}
-
-			// Cycle inputs
-			if s == "up" || s == "shift+tab" {
-				m.focused--
-			} else {
-				m.focused++
-			}
-
-			if m.focused > len(m.inputs)-1 {
-				m.focused = 0
-			} else if m.focused < 0 {
-				m.focused = len(m.inputs) - 1
-			}
-
-			for i := range m.inputs {
-				if i == m.focused {
-					cmds = append(cmds, m.inputs[i].Focus())
-					continue
-				}
-				m.inputs[i].Blur()
-			}
-
-			return m, tea.Batch(cmds...)
+			return m, m.handleNavigation(msg.String())
 		}
 
 	case addFormSubmitMsg:
@@ -220,9 +213,87 @@ func (m *addFormModel) Update(msg tea.Msg) (*addFormModel, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// getFirstInputForTab returns the first input index for a given tab
+func (m *addFormModel) getFirstInputForTab(tab int) int {
+	switch tab {
+	case tabGeneral:
+		return nameInput
+	case tabAdvanced:
+		return optionsInput
+	default:
+		return nameInput
+	}
+}
+
+// getInputsForCurrentTab returns the input indices for the current tab
+func (m *addFormModel) getInputsForCurrentTab() []int {
+	switch m.currentTab {
+	case tabGeneral:
+		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, tagsInput}
+	case tabAdvanced:
+		return []int{optionsInput, remoteCommandInput, requestTTYInput}
+	default:
+		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, tagsInput}
+	}
+}
+
+// updateFocus updates focus for inputs
+func (m *addFormModel) updateFocus() tea.Cmd {
+	var cmds []tea.Cmd
+	for i := range m.inputs {
+		if i == m.focused {
+			cmds = append(cmds, m.inputs[i].Focus())
+		} else {
+			m.inputs[i].Blur()
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+// handleNavigation handles tab/arrow navigation within the current tab
+func (m *addFormModel) handleNavigation(key string) tea.Cmd {
+	currentTabInputs := m.getInputsForCurrentTab()
+
+	// Find current position within the tab
+	currentPos := 0
+	for i, input := range currentTabInputs {
+		if input == m.focused {
+			currentPos = i
+			break
+		}
+	}
+
+	// Handle form submission on last field of Advanced tab
+	if key == "enter" && m.currentTab == tabAdvanced && currentPos == len(currentTabInputs)-1 {
+		return m.submitForm()
+	}
+
+	// Navigate within current tab
+	if key == "up" || key == "shift+tab" {
+		currentPos--
+	} else {
+		currentPos++
+	}
+
+	// Wrap around within current tab
+	if currentPos >= len(currentTabInputs) {
+		currentPos = 0
+	} else if currentPos < 0 {
+		currentPos = len(currentTabInputs) - 1
+	}
+
+	m.focused = currentTabInputs[currentPos]
+	return m.updateFocus()
+}
+
 func (m *addFormModel) View() string {
 	if m.success {
 		return ""
+	}
+
+	// Check if terminal height is sufficient
+	if !m.isHeightSufficient() {
+		return m.renderHeightWarning()
 	}
 
 	var b strings.Builder
@@ -230,24 +301,16 @@ func (m *addFormModel) View() string {
 	b.WriteString(m.styles.FormTitle.Render("Add SSH Host Configuration"))
 	b.WriteString("\n\n")
 
-	fields := []string{
-		"Host Name *",
-		"Hostname/IP *",
-		"User",
-		"Port",
-		"Identity File",
-		"ProxyJump",
-		"SSH Options",
-		"Tags (comma-separated)",
-		"Remote Command",
-		"Request TTY",
-	}
+	// Render tabs
+	b.WriteString(m.renderTabs())
+	b.WriteString("\n\n")
 
-	for i, field := range fields {
-		b.WriteString(m.styles.FormField.Render(field))
-		b.WriteString("\n")
-		b.WriteString(m.inputs[i].View())
-		b.WriteString("\n\n")
+	// Render current tab content
+	switch m.currentTab {
+	case tabGeneral:
+		b.WriteString(m.renderGeneralTab())
+	case tabAdvanced:
+		b.WriteString(m.renderAdvancedTab())
 	}
 
 	if m.err != "" {
@@ -255,9 +318,129 @@ func (m *addFormModel) View() string {
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString(m.styles.FormHelp.Render("Tab/Shift+Tab: navigate • Enter on last field: submit • Ctrl+S: save • Ctrl+C/Esc: cancel"))
+	// Help text
+	b.WriteString(m.styles.FormHelp.Render("Tab/Shift+Tab: navigate • Ctrl+J/K: switch tabs"))
+	b.WriteString("\n")
+	b.WriteString(m.styles.FormHelp.Render("Enter on last field: submit • Ctrl+S: save • Ctrl+C/Esc: cancel"))
 	b.WriteString("\n")
 	b.WriteString(m.styles.FormHelp.Render("* Required fields"))
+
+	return b.String()
+}
+
+// getMinimumHeight calculates the minimum height needed to display the form
+func (m *addFormModel) getMinimumHeight() int {
+	// Title: 1 line + 2 newlines = 3
+	titleLines := 3
+	// Tabs: 1 line + 2 newlines = 3
+	tabLines := 3
+	// Fields in current tab
+	var fieldsCount int
+	if m.currentTab == tabGeneral {
+		fieldsCount = 7 // 7 fields in general tab
+	} else {
+		fieldsCount = 3 // 3 fields in advanced tab
+	}
+	// Each field: label (1) + input (1) + spacing (2) = 4 lines per field, but let's be more conservative
+	fieldsLines := fieldsCount * 3 // Reduced from 4 to 3
+	// Help text: 3 lines
+	helpLines := 3
+	// Error message space when needed: 2 lines
+	errorLines := 0 // Only count when there's actually an error
+	if m.err != "" {
+		errorLines = 2
+	}
+
+	return titleLines + tabLines + fieldsLines + helpLines + errorLines + 1 // +1 minimal safety margin
+}
+
+// isHeightSufficient checks if the current terminal height is sufficient
+func (m *addFormModel) isHeightSufficient() bool {
+	return m.height >= m.getMinimumHeight()
+}
+
+// renderHeightWarning renders a warning message when height is insufficient
+func (m *addFormModel) renderHeightWarning() string {
+	required := m.getMinimumHeight()
+	current := m.height
+
+	warning := m.styles.ErrorText.Render("⚠️  Terminal height is too small!")
+	details := m.styles.FormField.Render(fmt.Sprintf("Current: %d lines, Required: %d lines", current, required))
+	instruction := m.styles.FormHelp.Render("Please resize your terminal window and try again.")
+	instruction2 := m.styles.FormHelp.Render("Press Ctrl+C to cancel or resize terminal window.")
+
+	return warning + "\n\n" + details + "\n\n" + instruction + "\n" + instruction2
+}
+
+// renderTabs renders the tab headers
+func (m *addFormModel) renderTabs() string {
+	var generalTab, advancedTab string
+
+	if m.currentTab == tabGeneral {
+		generalTab = m.styles.FocusedLabel.Render("[ General ]")
+		advancedTab = m.styles.FormField.Render("  Advanced  ")
+	} else {
+		generalTab = m.styles.FormField.Render("  General  ")
+		advancedTab = m.styles.FocusedLabel.Render("[ Advanced ]")
+	}
+
+	return generalTab + "  " + advancedTab
+}
+
+// renderGeneralTab renders the general tab content
+func (m *addFormModel) renderGeneralTab() string {
+	var b strings.Builder
+
+	fields := []struct {
+		index int
+		label string
+	}{
+		{nameInput, "Host Name *"},
+		{hostnameInput, "Hostname/IP *"},
+		{userInput, "User"},
+		{portInput, "Port"},
+		{identityInput, "Identity File"},
+		{proxyJumpInput, "ProxyJump"},
+		{tagsInput, "Tags (comma-separated)"},
+	}
+
+	for _, field := range fields {
+		fieldStyle := m.styles.FormField
+		if m.focused == field.index {
+			fieldStyle = m.styles.FocusedLabel
+		}
+		b.WriteString(fieldStyle.Render(field.label))
+		b.WriteString("\n")
+		b.WriteString(m.inputs[field.index].View())
+		b.WriteString("\n\n")
+	}
+
+	return b.String()
+}
+
+// renderAdvancedTab renders the advanced tab content
+func (m *addFormModel) renderAdvancedTab() string {
+	var b strings.Builder
+
+	fields := []struct {
+		index int
+		label string
+	}{
+		{optionsInput, "SSH Options"},
+		{remoteCommandInput, "Remote Command"},
+		{requestTTYInput, "Request TTY"},
+	}
+
+	for _, field := range fields {
+		fieldStyle := m.styles.FormField
+		if m.focused == field.index {
+			fieldStyle = m.styles.FocusedLabel
+		}
+		b.WriteString(fieldStyle.Render(field.label))
+		b.WriteString("\n")
+		b.WriteString(m.inputs[field.index].View())
+		b.WriteString("\n\n")
+	}
 
 	return b.String()
 }

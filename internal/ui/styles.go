@@ -33,7 +33,8 @@ type Styles struct {
 	HelpText lipgloss.Style
 
 	// Error and confirmation styles
-	Error lipgloss.Style
+	Error     lipgloss.Style
+	ErrorText lipgloss.Style
 
 	// Form styles (for add/edit forms)
 	FormTitle     lipgloss.Style
@@ -96,6 +97,11 @@ func NewStyles(width int) Styles {
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ErrorColor)).
 			Padding(1, 2),
+
+		// Error text style (no border, just red text)
+		ErrorText: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ErrorColor)).
+			Bold(true),
 
 		// Form styles
 		FormTitle: lipgloss.NewStyle().

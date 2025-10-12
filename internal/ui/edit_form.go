@@ -28,6 +28,7 @@ type editFormModel struct {
 	inputs           []textinput.Model
 	focusArea        int // 0=hosts, 1=properties
 	focused          int
+	currentTab       int // 0=General, 1=Advanced (only applies when focusArea == focusAreaProperties)
 	err              string
 	styles           Styles
 	originalName     string
@@ -164,6 +165,7 @@ func NewEditForm(hostName string, styles Styles, width, height int, configFile s
 		inputs:           inputs,
 		focusArea:        focusAreaHosts, // Start with hosts focused for multi-host editing
 		focused:          0,
+		currentTab:       0, // Start on General tab
 		originalName:     hostName,
 		originalHosts:    hostNames,
 		host:             host,
@@ -247,6 +249,157 @@ func (m *editFormModel) updateFocus() tea.Cmd {
 	return textinput.Blink
 }
 
+// getPropertiesForCurrentTab returns the property input indices for the current tab
+func (m *editFormModel) getPropertiesForCurrentTab() []int {
+	switch m.currentTab {
+	case 0: // General
+		return []int{0, 1, 2, 3, 4, 6} // hostname, user, port, identity, proxyjump, tags
+	case 1: // Advanced
+		return []int{5, 7, 8} // options, remotecommand, requesttty
+	default:
+		return []int{0, 1, 2, 3, 4, 6}
+	}
+}
+
+// getFirstPropertyForTab returns the first property index for a given tab
+func (m *editFormModel) getFirstPropertyForTab(tab int) int {
+	properties := []int{0, 1, 2, 3, 4, 6} // General tab
+	if tab == 1 {
+		properties = []int{5, 7, 8} // Advanced tab
+	}
+	if len(properties) > 0 {
+		return properties[0]
+	}
+	return 0
+}
+
+// handleEditNavigation handles navigation in the edit form with tab support
+func (m *editFormModel) handleEditNavigation(key string) tea.Cmd {
+	if m.focusArea == focusAreaHosts {
+		// Navigate in hosts area
+		if key == "up" || key == "shift+tab" {
+			m.focused--
+		} else {
+			m.focused++
+		}
+
+		if m.focused >= len(m.hostInputs) {
+			// Move to properties area, keep current tab
+			m.focusArea = focusAreaProperties
+			// Keep the current tab instead of forcing it to 0
+			m.focused = m.getFirstPropertyForTab(m.currentTab)
+		} else if m.focused < 0 {
+			m.focused = len(m.hostInputs) - 1
+		}
+	} else {
+		// Navigate in properties area within current tab
+		currentTabProperties := m.getPropertiesForCurrentTab()
+
+		// Find current position within the tab
+		currentPos := 0
+		for i, prop := range currentTabProperties {
+			if prop == m.focused {
+				currentPos = i
+				break
+			}
+		}
+
+		// Handle form submission on last field of Advanced tab
+		if key == "enter" && m.currentTab == 1 && currentPos == len(currentTabProperties)-1 {
+			return m.submitEditForm()
+		}
+
+		// Navigate within current tab
+		if key == "up" || key == "shift+tab" {
+			currentPos--
+		} else {
+			currentPos++
+		}
+
+		// Handle transitions between areas and tabs
+		if currentPos >= len(currentTabProperties) {
+			// Move to next area/tab
+			if m.currentTab == 0 {
+				// Move to advanced tab
+				m.currentTab = 1
+				m.focused = m.getFirstPropertyForTab(1)
+			} else {
+				// Move back to hosts area
+				m.focusArea = focusAreaHosts
+				m.focused = 0
+			}
+		} else if currentPos < 0 {
+			// Move to previous area/tab
+			if m.currentTab == 1 {
+				// Move to general tab
+				m.currentTab = 0
+				properties := m.getPropertiesForCurrentTab()
+				m.focused = properties[len(properties)-1]
+			} else {
+				// Move to hosts area
+				m.focusArea = focusAreaHosts
+				m.focused = len(m.hostInputs) - 1
+			}
+		} else {
+			m.focused = currentTabProperties[currentPos]
+		}
+	}
+
+	return m.updateFocus()
+}
+
+// getMinimumHeight calculates the minimum height needed to display the edit form
+func (m *editFormModel) getMinimumHeight() int {
+	// Title: 1 line + 2 newlines = 3
+	titleLines := 3
+	// Config file info: 1 line + 2 newlines = 3
+	configLines := 3
+	// Host Names section: title (1) + spacing (2) = 3
+	hostSectionLines := 3
+	// Host inputs: number of hosts * 3 lines each (reduced from 4)
+	hostLines := len(m.hostInputs) * 3
+	// Properties section: title (1) + spacing (2) = 3
+	propertiesSectionLines := 3
+	// Tabs: 1 line + 2 newlines = 3
+	tabLines := 3
+	// Fields in current tab
+	var fieldsCount int
+	if m.currentTab == 0 {
+		fieldsCount = 6 // 6 fields in general tab
+	} else {
+		fieldsCount = 3 // 3 fields in advanced tab
+	}
+	// Each field: reduced from 4 to 3 lines per field
+	fieldsLines := fieldsCount * 3
+	// Help text: 3 lines
+	helpLines := 3
+	// Error message space when needed: 2 lines
+	errorLines := 0 // Only count when there's actually an error
+	if m.err != "" {
+		errorLines = 2
+	}
+
+	return titleLines + configLines + hostSectionLines + hostLines + propertiesSectionLines + tabLines + fieldsLines + helpLines + errorLines + 1 // +1 minimal safety margin
+}
+
+// isHeightSufficient checks if the current terminal height is sufficient
+func (m *editFormModel) isHeightSufficient() bool {
+	return m.height >= m.getMinimumHeight()
+}
+
+// renderHeightWarning renders a warning message when height is insufficient
+func (m *editFormModel) renderHeightWarning() string {
+	required := m.getMinimumHeight()
+	current := m.height
+
+	warning := m.styles.ErrorText.Render("⚠️  Terminal height is too small!")
+	details := m.styles.FormField.Render(fmt.Sprintf("Current: %d lines, Required: %d lines", current, required))
+	instruction := m.styles.FormHelp.Render("Please resize your terminal window and try again.")
+	instruction2 := m.styles.FormHelp.Render("Press Ctrl+C to cancel or resize terminal window.")
+
+	return warning + "\n\n" + details + "\n\n" + instruction + "\n" + instruction2
+}
+
 func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -265,43 +418,26 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Allow submission from any field with Ctrl+S (Save)
 			return m, m.submitEditForm()
 
-		case "tab", "shift+tab", "enter", "up", "down":
-			s := msg.String()
-
-			// Handle form submission
-			totalFields := len(m.hostInputs) + len(m.inputs)
-			currentGlobalIndex := m.focused
+		case "ctrl+j":
+			// Switch to next tab
+			m.currentTab = (m.currentTab + 1) % 2
+			// If we're in hosts area, stay there. If in properties, go to the first field of the new tab
 			if m.focusArea == focusAreaProperties {
-				currentGlobalIndex = len(m.hostInputs) + m.focused
+				m.focused = m.getFirstPropertyForTab(m.currentTab)
 			}
-
-			if s == "enter" && currentGlobalIndex == totalFields-1 {
-				return m, m.submitEditForm()
-			}
-
-			// Cycle inputs
-			if s == "up" || s == "shift+tab" {
-				currentGlobalIndex--
-			} else {
-				currentGlobalIndex++
-			}
-
-			if currentGlobalIndex >= totalFields {
-				currentGlobalIndex = 0
-			} else if currentGlobalIndex < 0 {
-				currentGlobalIndex = totalFields - 1
-			}
-
-			// Update focus area and focused index based on global index
-			if currentGlobalIndex < len(m.hostInputs) {
-				m.focusArea = focusAreaHosts
-				m.focused = currentGlobalIndex
-			} else {
-				m.focusArea = focusAreaProperties
-				m.focused = currentGlobalIndex - len(m.hostInputs)
-			}
-
 			return m, m.updateFocus()
+
+		case "ctrl+k":
+			// Switch to previous tab
+			m.currentTab = (m.currentTab - 1 + 2) % 2
+			// If we're in hosts area, stay there. If in properties, go to the first field of the new tab
+			if m.focusArea == focusAreaProperties {
+				m.focused = m.getFirstPropertyForTab(m.currentTab)
+			}
+			return m, m.updateFocus()
+
+		case "tab", "shift+tab", "enter", "up", "down":
+			return m, m.handleEditNavigation(msg.String())
 
 		case "ctrl+a":
 			// Add a new host input
@@ -343,6 +479,11 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *editFormModel) View() string {
+	// Check if terminal height is sufficient
+	if !m.isHeightSufficient() {
+		return m.renderHeightWarning()
+	}
+
 	var b strings.Builder
 
 	if m.err != "" {
@@ -381,27 +522,16 @@ func (m *editFormModel) View() string {
 	b.WriteString(m.styles.FormTitle.Render("Common Properties"))
 	b.WriteString("\n\n")
 
-	fields := []string{
-		"Hostname/IP *",
-		"User",
-		"Port",
-		"Identity File",
-		"Proxy Jump",
-		"SSH Options",
-		"Tags (comma-separated)",
-		"Remote Command",
-		"Request TTY",
-	}
+	// Render tabs for properties
+	b.WriteString(m.renderEditTabs())
+	b.WriteString("\n\n")
 
-	for i, field := range fields {
-		fieldStyle := m.styles.FormField
-		if m.focusArea == focusAreaProperties && m.focused == i {
-			fieldStyle = m.styles.FocusedLabel
-		}
-		b.WriteString(fieldStyle.Render(field))
-		b.WriteString("\n")
-		b.WriteString(m.inputs[i].View())
-		b.WriteString("\n\n")
+	// Render current tab content
+	switch m.currentTab {
+	case 0: // General
+		b.WriteString(m.renderEditGeneralTab())
+	case 1: // Advanced
+		b.WriteString(m.renderEditAdvancedTab())
 	}
 
 	if m.err != "" {
@@ -411,13 +541,85 @@ func (m *editFormModel) View() string {
 
 	// Show different help based on number of hosts
 	if len(m.hostInputs) > 1 {
-		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+A: add host • Ctrl+D: delete host"))
+		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+J/K: switch tabs • Ctrl+A: add host • Ctrl+D: delete host"))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+A: add host"))
+		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+J/K: switch tabs • Ctrl+A: add host"))
 		b.WriteString("\n")
 	}
 	b.WriteString(m.styles.FormHelp.Render("Ctrl+S: save • Ctrl+C/Esc: cancel • * Required fields"))
+
+	return b.String()
+}
+
+// renderEditTabs renders the tab headers for properties
+func (m *editFormModel) renderEditTabs() string {
+	var generalTab, advancedTab string
+
+	if m.currentTab == 0 {
+		generalTab = m.styles.FocusedLabel.Render("[ General ]")
+		advancedTab = m.styles.FormField.Render("  Advanced  ")
+	} else {
+		generalTab = m.styles.FormField.Render("  General  ")
+		advancedTab = m.styles.FocusedLabel.Render("[ Advanced ]")
+	}
+
+	return generalTab + "  " + advancedTab
+}
+
+// renderEditGeneralTab renders the general tab content for properties
+func (m *editFormModel) renderEditGeneralTab() string {
+	var b strings.Builder
+
+	fields := []struct {
+		index int
+		label string
+	}{
+		{0, "Hostname/IP *"},
+		{1, "User"},
+		{2, "Port"},
+		{3, "Identity File"},
+		{4, "Proxy Jump"},
+		{6, "Tags (comma-separated)"},
+	}
+
+	for _, field := range fields {
+		fieldStyle := m.styles.FormField
+		if m.focusArea == focusAreaProperties && m.focused == field.index {
+			fieldStyle = m.styles.FocusedLabel
+		}
+		b.WriteString(fieldStyle.Render(field.label))
+		b.WriteString("\n")
+		b.WriteString(m.inputs[field.index].View())
+		b.WriteString("\n\n")
+	}
+
+	return b.String()
+}
+
+// renderEditAdvancedTab renders the advanced tab content for properties
+func (m *editFormModel) renderEditAdvancedTab() string {
+	var b strings.Builder
+
+	fields := []struct {
+		index int
+		label string
+	}{
+		{5, "SSH Options"},
+		{7, "Remote Command"},
+		{8, "Request TTY"},
+	}
+
+	for _, field := range fields {
+		fieldStyle := m.styles.FormField
+		if m.focusArea == focusAreaProperties && m.focused == field.index {
+			fieldStyle = m.styles.FocusedLabel
+		}
+		b.WriteString(fieldStyle.Render(field.label))
+		b.WriteString("\n")
+		b.WriteString(m.inputs[field.index].View())
+		b.WriteString("\n\n")
+	}
 
 	return b.String()
 }
