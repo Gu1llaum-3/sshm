@@ -140,11 +140,17 @@ func connectToHost(hostName string) {
 	fmt.Printf("Connecting to %s...\n", hostName)
 
 	var sshCmd *exec.Cmd
+	var args []string
+
 	if configFile != "" {
-		sshCmd = exec.Command("ssh", "-F", configFile, hostName)
-	} else {
-		sshCmd = exec.Command("ssh", hostName)
+		args = append(args, "-F", configFile)
 	}
+	args = append(args, hostName)
+
+	// Note: We don't add RemoteCommand here because if it's configured in SSH config,
+	// SSH will handle it automatically. Adding it as a command line argument would conflict.
+
+	sshCmd = exec.Command("ssh", args...)
 
 	// Set up the command to use the same stdin, stdout, and stderr as the parent process
 	sshCmd.Stdin = os.Stdin

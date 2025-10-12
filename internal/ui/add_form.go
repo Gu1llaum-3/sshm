@@ -47,7 +47,7 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 		}
 	}
 
-	inputs := make([]textinput.Model, 8)
+	inputs := make([]textinput.Model, 10) // Increased from 9 to 10 for RequestTTY
 
 	// Name input
 	inputs[nameInput] = textinput.New()
@@ -101,6 +101,18 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 	inputs[tagsInput].CharLimit = 200
 	inputs[tagsInput].Width = 50
 
+	// Remote Command input
+	inputs[remoteCommandInput] = textinput.New()
+	inputs[remoteCommandInput].Placeholder = "ls -la, htop, bash"
+	inputs[remoteCommandInput].CharLimit = 300
+	inputs[remoteCommandInput].Width = 70
+
+	// RequestTTY input
+	inputs[requestTTYInput] = textinput.New()
+	inputs[requestTTYInput].Placeholder = "yes, no, force, auto"
+	inputs[requestTTYInput].CharLimit = 10
+	inputs[requestTTYInput].Width = 30
+
 	return &addFormModel{
 		inputs:     inputs,
 		focused:    nameInput,
@@ -120,6 +132,8 @@ const (
 	proxyJumpInput
 	optionsInput
 	tagsInput
+	remoteCommandInput
+	requestTTYInput
 )
 
 // Messages for communication with parent model
@@ -225,6 +239,8 @@ func (m *addFormModel) View() string {
 		"ProxyJump",
 		"SSH Options",
 		"Tags (comma-separated)",
+		"Remote Command",
+		"Request TTY",
 	}
 
 	for i, field := range fields {
@@ -291,6 +307,8 @@ func (m *addFormModel) submitForm() tea.Cmd {
 		identity := strings.TrimSpace(m.inputs[identityInput].Value())
 		proxyJump := strings.TrimSpace(m.inputs[proxyJumpInput].Value())
 		options := strings.TrimSpace(m.inputs[optionsInput].Value())
+		remoteCommand := strings.TrimSpace(m.inputs[remoteCommandInput].Value())
+		requestTTY := strings.TrimSpace(m.inputs[requestTTYInput].Value())
 
 		// Set defaults
 		if user == "" {
@@ -319,14 +337,16 @@ func (m *addFormModel) submitForm() tea.Cmd {
 
 		// Create host configuration
 		host := config.SSHHost{
-			Name:      name,
-			Hostname:  hostname,
-			User:      user,
-			Port:      port,
-			Identity:  identity,
-			ProxyJump: proxyJump,
-			Options:   config.ParseSSHOptionsFromCommand(options),
-			Tags:      tags,
+			Name:          name,
+			Hostname:      hostname,
+			User:          user,
+			Port:          port,
+			Identity:      identity,
+			ProxyJump:     proxyJump,
+			Options:       config.ParseSSHOptionsFromCommand(options),
+			RemoteCommand: remoteCommand,
+			RequestTTY:    requestTTY,
+			Tags:          tags,
 		}
 
 		// Add to config

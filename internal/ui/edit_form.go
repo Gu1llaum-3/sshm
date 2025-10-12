@@ -9,7 +9,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 const (
@@ -30,7 +29,6 @@ type editFormModel struct {
 	focusArea        int // 0=hosts, 1=properties
 	focused          int
 	err              string
-	success          bool
 	styles           Styles
 	originalName     string
 	originalHosts    []string        // Store original host names for multi-host detection
@@ -92,7 +90,7 @@ func NewEditForm(hostName string, styles Styles, width, height int, configFile s
 		}
 	}
 
-	inputs := make([]textinput.Model, 7) // Reduced from 8 since we removed nameInput
+	inputs := make([]textinput.Model, 9) // Increased from 8 to 9 for RequestTTY
 
 	// Hostname input
 	inputs[0] = textinput.New()
@@ -146,6 +144,20 @@ func NewEditForm(hostName string, styles Styles, width, height int, configFile s
 	if len(host.Tags) > 0 {
 		inputs[6].SetValue(strings.Join(host.Tags, ", "))
 	}
+
+	// Remote Command input
+	inputs[7] = textinput.New()
+	inputs[7].Placeholder = "ls -la, htop, bash"
+	inputs[7].CharLimit = 300
+	inputs[7].Width = 70
+	inputs[7].SetValue(host.RemoteCommand)
+
+	// RequestTTY input
+	inputs[8] = textinput.New()
+	inputs[8].Placeholder = "yes, no, force, auto"
+	inputs[8].CharLimit = 10
+	inputs[8].Width = 30
+	inputs[8].SetValue(host.RequestTTY)
 
 	return &editFormModel{
 		hostInputs:       hostInputs,
@@ -247,7 +259,6 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.err = ""
-			m.success = false
 			return m, func() tea.Msg { return editFormCancelMsg{} }
 
 		case "ctrl+s":
@@ -306,10 +317,10 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editFormSubmitMsg:
 		if msg.err != nil {
 			m.err = msg.err.Error()
-			m.success = false
 		} else {
-			m.success = true
-			m.err = ""
+			// Success: let the wrapper handle this
+			// In TUI mode, this will be handled by the parent
+			// In standalone mode, the wrapper will quit
 		}
 		return m, nil
 	}
@@ -333,13 +344,6 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *editFormModel) View() string {
 	var b strings.Builder
-
-	if m.success {
-		b.WriteString(m.styles.FormField.Foreground(lipgloss.Color("#10B981")).Render("✓ Host updated successfully!"))
-		b.WriteString("\n\n")
-		b.WriteString(m.styles.FormHelp.Render("Press Ctrl+C or Esc to go back"))
-		return b.String()
-	}
 
 	if m.err != "" {
 		b.WriteString(m.styles.Error.Render("Error: " + m.err))
@@ -385,6 +389,8 @@ func (m *editFormModel) View() string {
 		"Proxy Jump",
 		"SSH Options",
 		"Tags (comma-separated)",
+		"Remote Command",
+		"Request TTY",
 	}
 
 	for i, field := range fields {
@@ -416,6 +422,30 @@ func (m *editFormModel) View() string {
 	return b.String()
 }
 
+// Standalone wrapper for edit form
+type standaloneEditForm struct {
+	*editFormModel
+}
+
+func (m standaloneEditForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case editFormSubmitMsg:
+		if msg.err != nil {
+			m.editFormModel.err = msg.err.Error()
+			return m, nil
+		} else {
+			// Success: quit the program
+			return m, tea.Quit
+		}
+	case editFormCancelMsg:
+		return m, tea.Quit
+	}
+
+	newForm, cmd := m.editFormModel.Update(msg)
+	m.editFormModel = newForm.(*editFormModel)
+	return m, cmd
+}
+
 // RunEditForm runs the edit form as a standalone program
 func RunEditForm(hostName string, configFile string) error {
 	styles := NewStyles(80) // Default width
@@ -424,17 +454,10 @@ func RunEditForm(hostName string, configFile string) error {
 		return err
 	}
 
-	p := tea.NewProgram(editForm, tea.WithAltScreen())
+	m := standaloneEditForm{editForm}
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
-	if err != nil {
-		return err
-	}
-
-	if editForm.err != "" {
-		return fmt.Errorf(editForm.err)
-	}
-
-	return nil
+	return err
 }
 
 func (m *editFormModel) submitEditForm() tea.Cmd {
@@ -453,12 +476,14 @@ func (m *editFormModel) submitEditForm() tea.Cmd {
 		}
 
 		// Get property values using direct indices
-		hostname := strings.TrimSpace(m.inputs[0].Value())  // hostnameInput
-		user := strings.TrimSpace(m.inputs[1].Value())      // userInput
-		port := strings.TrimSpace(m.inputs[2].Value())      // portInput
-		identity := strings.TrimSpace(m.inputs[3].Value())  // identityInput
-		proxyJump := strings.TrimSpace(m.inputs[4].Value()) // proxyJumpInput
-		options := strings.TrimSpace(m.inputs[5].Value())   // optionsInput
+		hostname := strings.TrimSpace(m.inputs[0].Value())      // hostnameInput
+		user := strings.TrimSpace(m.inputs[1].Value())          // userInput
+		port := strings.TrimSpace(m.inputs[2].Value())          // portInput
+		identity := strings.TrimSpace(m.inputs[3].Value())      // identityInput
+		proxyJump := strings.TrimSpace(m.inputs[4].Value())     // proxyJumpInput
+		options := strings.TrimSpace(m.inputs[5].Value())       // optionsInput
+		remoteCommand := strings.TrimSpace(m.inputs[7].Value()) // remoteCommandInput
+		requestTTY := strings.TrimSpace(m.inputs[8].Value())    // requestTTYInput
 
 		// Set defaults
 		if port == "" {
@@ -491,13 +516,15 @@ func (m *editFormModel) submitEditForm() tea.Cmd {
 
 		// Create the common host configuration
 		commonHost := config.SSHHost{
-			Hostname:  hostname,
-			User:      user,
-			Port:      port,
-			Identity:  identity,
-			ProxyJump: proxyJump,
-			Options:   options,
-			Tags:      tags,
+			Hostname:      hostname,
+			User:          user,
+			Port:          port,
+			Identity:      identity,
+			ProxyJump:     proxyJump,
+			Options:       options,
+			RemoteCommand: remoteCommand,
+			RequestTTY:    requestTTY,
+			Tags:          tags,
 		}
 
 		var err error
