@@ -34,7 +34,7 @@ SSHM is a beautiful command-line tool that transforms how you manage and connect
 - **🔍 Smart Search** - Find hosts quickly with built-in filtering and search
 - **📝 Real-time Status** - Live SSH connectivity indicators with asynchronous ping checks and color-coded status
 - **🔔 Smart Updates** - Automatic version checking with update notifications
-- **📈 Connection History** - Track your SSH connections with last login timestamps
+- **📈 Connection History** - Track both configured and manual SSH connections with timestamps and usage counts
 
 ### 🛠️ **Technical Features**
 - **🔒 Secure** - Works directly with your existing `~/.ssh/config` file
@@ -106,6 +106,7 @@ sshm
 - `d` - Delete selected host
 - `m` - Move host to another config file (requires SSH Include directives)
 - `f` - Port forwarding setup
+- `Ctrl+H` - Switch to connection history view
 - `q` - Quit
 - `/` - Search/filter hosts
 
@@ -284,6 +285,47 @@ sshm web-01
 - **History tracking** - All connections are recorded with timestamps
 - **Error handling** - Clear messages if host doesn't exist or configuration issues
 - **Config file support** - Works with custom config files using `-c` flag
+
+### Connection History
+
+SSHM automatically tracks all your SSH connections, including both configured hosts and manual connections made outside of SSHM.
+
+**Access History:**
+Press `Ctrl+H` from the main interface to switch to the history view. Press `Ctrl+L` to return to the main host list.
+
+**Features:**
+- **Automatic tracking** - Records all SSH connections with timestamps and connection counts
+- **Manual connection detection** - Captures `ssh user@host -p port -i key` commands made in your terminal
+- **Visual indicators** - Manual connections (not in your SSH config) are marked with ★
+- **Search & filter** - Find connections quickly using the search bar
+- **Add to config** - Press `a` on any manual connection (★) to add it to your SSH config
+- **Persistent storage** - History is saved in `~/.config/sshm/sshm_history.json`
+
+**Tracked Information:**
+- Host name or hostname for manual connections
+- Username and hostname
+- Port number
+- Last connection timestamp
+- Total connection count
+
+**Use Cases:**
+- Review your recent SSH activity
+- Find frequently used manual connections
+- Promote manual connections to permanent SSH config entries
+- Track when you last connected to a host
+
+**Example Workflow:**
+```bash
+# Make a manual SSH connection
+ssh deploy@192.168.1.100 -p 2222 -i ~/.ssh/custom_key
+
+# Launch SSHM and press Ctrl+H to view history
+sshm
+# Press Ctrl+H → see the manual connection with ★ indicator
+# Press 'a' to add it to your SSH config
+# Give it a name like "deploy-server" and save
+# Press Ctrl+L to return to main list → now it's a configured host
+```
 
 ### Backup Configuration
 

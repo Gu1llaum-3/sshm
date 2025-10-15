@@ -42,6 +42,7 @@ const (
 	ViewPortForward
 	ViewHelp
 	ViewFileSelector
+	ViewHistory
 )
 
 // PortForwardType defines the type of port forwarding
@@ -81,7 +82,7 @@ type Model struct {
 	configFile     string // Path to the SSH config file
 
 	// Application configuration
-	appConfig      *config.AppConfig
+	appConfig *config.AppConfig
 
 	// Version update information
 	updateInfo     *version.UpdateInfo
@@ -96,6 +97,7 @@ type Model struct {
 	portForwardForm  *portForwardModel
 	helpForm         *helpModel
 	fileSelectorForm *fileSelectorModel
+	historyView      *HistoryModel
 
 	// Terminal size and styles
 	width  int

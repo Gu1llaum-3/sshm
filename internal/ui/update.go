@@ -20,6 +20,8 @@ type (
 	versionCheckMsg *version.UpdateInfo
 	versionErrorMsg error
 	errorMsg        string
+	returnToListMsg struct{}
+	refreshHostsMsg struct{}
 )
 
 // startPingAllCmd creates a command to ping all hosts concurrently
@@ -164,6 +166,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showingError = false
 			m.errorMessage = ""
 		}
+		return m, nil
+
+	case returnToListMsg:
+		// Return to list view from history
+		m.viewMode = ViewList
+		m.historyView = nil
+		return m, nil
+
+	case refreshHostsMsg:
+		// Refresh hosts after adding from history
+		var hosts []config.SSHHost
+		var err error
+
+		if m.configFile != "" {
+			hosts, err = config.ParseSSHConfigFile(m.configFile)
+		} else {
+			hosts, err = config.ParseSSHConfig()
+		}
+
+		if err != nil {
+			return m, nil
+		}
+		m.hosts = m.sortHosts(hosts)
+
+		// Reapply search filter if there is one active
+		if m.searchInput.Value() != "" {
+			m.filteredHosts = m.filterHosts(m.searchInput.Value())
+		} else {
+			m.filteredHosts = m.hosts
+		}
+
+		m.updateTableRows()
+		m.viewMode = ViewList
+		m.historyView = nil
 		return m, nil
 
 	case addFormSubmitMsg:
@@ -433,6 +469,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newForm, cmd = m.fileSelectorForm.Update(msg)
 				m.fileSelectorForm = newForm
 				return m, cmd
+			}
+		case ViewHistory:
+			if m.historyView != nil {
+				newView, cmd := m.historyView.Update(msg)
+				if histView, ok := newView.(HistoryModel); ok {
+					m.historyView = &histView
+					return m, cmd
+				}
 			}
 		case ViewList:
 			// Handle list view keys
@@ -704,6 +748,22 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.helpForm = NewHelpForm(m.styles, m.width, m.height)
 			m.viewMode = ViewHelp
 			return m, nil
+		}
+	case "ctrl+h":
+		if !m.searchMode && !m.deleteMode {
+			// Switch to history view
+			if m.historyManager != nil {
+				connections := m.historyManager.GetAllConnectionsInfo()
+				historyView := NewHistoryModel(connections, m.configFile, m.currentVersion)
+				historyView.width = m.width
+				historyView.height = m.height
+				historyView.styles = m.styles
+				// Force table update with correct dimensions
+				historyView.updateTable()
+				m.historyView = &historyView
+				m.viewMode = ViewHistory
+				return m, nil
+			}
 		}
 	case "s":
 		if !m.searchMode && !m.deleteMode {

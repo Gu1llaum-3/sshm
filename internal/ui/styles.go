@@ -63,12 +63,14 @@ func NewStyles(width int) Styles {
 		SearchFocused: lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(PrimaryColor)).
-			Padding(0, 1),
+			Padding(0, 1).
+			Width(50), // Fixed width to prevent expansion
 
 		SearchUnfocused: lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(SecondaryColor)).
-			Padding(0, 1),
+			Padding(0, 1).
+			Width(50), // Fixed width to prevent expansion
 
 		// Table styles
 		TableFocused: lipgloss.NewStyle().

@@ -49,6 +49,7 @@ Hosts are read from your ~/.ssh/config file by default.`,
 		}
 
 		// If a host name is provided, connect directly
+		// (manual SSH commands are handled in Execute() before reaching here)
 		hostName := args[0]
 		connectToHost(hostName)
 		return nil
@@ -171,6 +172,73 @@ func connectToHost(hostName string) {
 	}
 }
 
+// connectManualSSH handles manual SSH connections like: sshm -p 2222 user@host
+func connectManualSSH(args []string) {
+	// Parse the manual connection arguments
+	conn, ok := history.ParseSSHArgs(args)
+	if !ok || conn.Hostname == "" {
+		fmt.Println("Error: Invalid SSH connection arguments")
+		fmt.Println("Usage: sshm [-p port] [-i identity] [user@]hostname")
+		os.Exit(1)
+	}
+
+	// Record the manual connection in history
+	historyManager, err := history.NewHistoryManager()
+	if err != nil {
+		// Log the error but don't prevent the connection
+		fmt.Printf("Warning: Could not initialize connection history: %v\n", err)
+	} else {
+		err = historyManager.RecordManualConnection(*conn)
+		if err != nil {
+			// Log the error but don't prevent the connection
+			fmt.Printf("Warning: Could not record connection history: %v\n", err)
+		}
+	}
+
+	// Build and execute the SSH command
+	fmt.Printf("Connecting to %s@%s:%s...\n", conn.User, conn.Hostname, conn.Port)
+
+	// Build SSH arguments
+	var sshArgs []string
+
+	// Add port if not default
+	if conn.Port != "" && conn.Port != "22" {
+		sshArgs = append(sshArgs, "-p", conn.Port)
+	}
+
+	// Add identity file if specified
+	if conn.Identity != "" {
+		sshArgs = append(sshArgs, "-i", conn.Identity)
+	}
+
+	// Add user@host or just host
+	if conn.User != "" {
+		sshArgs = append(sshArgs, fmt.Sprintf("%s@%s", conn.User, conn.Hostname))
+	} else {
+		sshArgs = append(sshArgs, conn.Hostname)
+	}
+
+	sshCmd := exec.Command("ssh", sshArgs...)
+
+	// Set up the command to use the same stdin, stdout, and stderr as the parent process
+	sshCmd.Stdin = os.Stdin
+	sshCmd.Stdout = os.Stdout
+	sshCmd.Stderr = os.Stderr
+
+	// Execute the SSH command
+	err = sshCmd.Run()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			// SSH command failed, exit with the same code
+			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+				os.Exit(status.ExitStatus())
+			}
+		}
+		fmt.Printf("Error executing SSH command: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 // getVersionWithUpdateCheck returns a custom version string with update check
 func getVersionWithUpdateCheck() string {
 	versionText := fmt.Sprintf("sshm version %s", AppVersion)
@@ -197,6 +265,29 @@ func getVersionWithUpdateCheck() string {
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
+	// Check if this looks like a manual SSH command BEFORE Cobra parses flags
+	// This prevents Cobra from complaining about unknown flags like -p, -i, etc.
+	if len(os.Args) > 1 {
+		// Check if any argument looks like a manual SSH connection
+		args := os.Args[1:]
+
+		// Skip if it's a known subcommand
+		knownCommands := []string{"add", "edit", "search", "move", "help", "completion", "version", "--version", "-v"}
+		isSubcommand := false
+		for _, cmd := range knownCommands {
+			if args[0] == cmd {
+				isSubcommand = true
+				break
+			}
+		}
+
+		// If not a subcommand and looks like manual SSH, handle it directly
+		if !isSubcommand && history.IsManualSSHCommand(args) {
+			connectManualSSH(args)
+			return
+		}
+	}
+
 	// Custom error handling for unknown commands that might be host names
 	if err := RootCmd.Execute(); err != nil {
 		// Check if this is an "unknown command" error and the argument might be a host name

@@ -2,6 +2,7 @@ package history
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -305,4 +306,100 @@ func (hm *HistoryManager) GetPortForwardingConfig(hostName string) *PortForwardC
 		return conn.PortForwarding
 	}
 	return nil
+}
+
+// ManualConnection represents a manual SSH connection (e.g., ssh user@host -p 2222)
+type ManualConnection struct {
+	User     string
+	Hostname string
+	Port     string
+	Identity string
+}
+
+// RecordManualConnection records a manual SSH connection (like ssh user@host -p 2222 -i key)
+// These are stored with a generated host name like "manual:user@host:port"
+func (hm *HistoryManager) RecordManualConnection(conn ManualConnection) error {
+	// Generate a unique identifier for this manual connection
+	hostID := generateManualHostID(conn)
+
+	now := time.Now()
+
+	if existingConn, exists := hm.history.Connections[hostID]; exists {
+		// Update existing connection
+		existingConn.LastConnect = now
+		existingConn.ConnectCount++
+		hm.history.Connections[hostID] = existingConn
+	} else {
+		// Create new connection record
+		hm.history.Connections[hostID] = ConnectionInfo{
+			HostName:     hostID,
+			LastConnect:  now,
+			ConnectCount: 1,
+		}
+	}
+
+	return hm.saveHistory()
+}
+
+// generateManualHostID generates a unique ID for manual connections
+func generateManualHostID(conn ManualConnection) string {
+	// Format: manual:user@hostname:port
+	user := conn.User
+	if user == "" {
+		user = "default"
+	}
+	port := conn.Port
+	if port == "" {
+		port = "22"
+	}
+	return fmt.Sprintf("manual:%s@%s:%s", user, conn.Hostname, port)
+}
+
+// IsManualConnection checks if a hostname represents a manual connection
+func IsManualConnection(hostName string) bool {
+	return len(hostName) > 7 && hostName[:7] == "manual:"
+}
+
+// ParseManualConnectionID parses a manual connection ID back into its components
+func ParseManualConnectionID(hostID string) (user, hostname, port string, ok bool) {
+	if !IsManualConnection(hostID) {
+		return "", "", "", false
+	}
+
+	// Remove "manual:" prefix
+	parts := hostID[7:] // Skip "manual:"
+
+	// Split by last ':'
+	lastColon := -1
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] == ':' {
+			lastColon = i
+			break
+		}
+	}
+
+	if lastColon == -1 {
+		return "", "", "", false
+	}
+
+	port = parts[lastColon+1:]
+	userHost := parts[:lastColon]
+
+	// Split user@host
+	atSign := -1
+	for i := 0; i < len(userHost); i++ {
+		if userHost[i] == '@' {
+			atSign = i
+			break
+		}
+	}
+
+	if atSign == -1 {
+		return "", "", "", false
+	}
+
+	user = userHost[:atSign]
+	hostname = userHost[atSign+1:]
+
+	return user, hostname, port, true
 }
