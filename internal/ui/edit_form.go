@@ -91,7 +91,7 @@ func NewEditForm(hostName string, styles Styles, width, height int, configFile s
 		}
 	}
 
-	inputs := make([]textinput.Model, 9) // Increased from 8 to 9 for RequestTTY
+	inputs := make([]textinput.Model, 10)
 
 	// Hostname input
 	inputs[0] = textinput.New()
@@ -128,37 +128,44 @@ func NewEditForm(hostName string, styles Styles, width, height int, configFile s
 	inputs[4].Width = 30
 	inputs[4].SetValue(host.ProxyJump)
 
-	// Options input
+	// ProxyCommand input
 	inputs[5] = textinput.New()
-	inputs[5].Placeholder = "-o StrictHostKeyChecking=no"
+	inputs[5].Placeholder = "ssh -W %h:%p Jumphost"
 	inputs[5].CharLimit = 200
 	inputs[5].Width = 50
+	inputs[5].SetValue(host.ProxyCommand)
+
+	// Options input
+	inputs[6] = textinput.New()
+	inputs[6].Placeholder = "-o StrictHostKeyChecking=no"
+	inputs[6].CharLimit = 200
+	inputs[6].Width = 50
 	if host.Options != "" {
-		inputs[5].SetValue(config.FormatSSHOptionsForCommand(host.Options))
+		inputs[6].SetValue(config.FormatSSHOptionsForCommand(host.Options))
 	}
 
 	// Tags input
-	inputs[6] = textinput.New()
-	inputs[6].Placeholder = "production, web, database"
-	inputs[6].CharLimit = 200
-	inputs[6].Width = 50
+	inputs[7] = textinput.New()
+	inputs[7].Placeholder = "production, web, database"
+	inputs[7].CharLimit = 200
+	inputs[7].Width = 50
 	if len(host.Tags) > 0 {
-		inputs[6].SetValue(strings.Join(host.Tags, ", "))
+		inputs[7].SetValue(strings.Join(host.Tags, ", "))
 	}
 
 	// Remote Command input
-	inputs[7] = textinput.New()
-	inputs[7].Placeholder = "ls -la, htop, bash"
-	inputs[7].CharLimit = 300
-	inputs[7].Width = 70
-	inputs[7].SetValue(host.RemoteCommand)
+	inputs[8] = textinput.New()
+	inputs[8].Placeholder = "ls -la, htop, bash"
+	inputs[8].CharLimit = 300
+	inputs[8].Width = 70
+	inputs[8].SetValue(host.RemoteCommand)
 
 	// RequestTTY input
-	inputs[8] = textinput.New()
-	inputs[8].Placeholder = "yes, no, force, auto"
-	inputs[8].CharLimit = 10
-	inputs[8].Width = 30
-	inputs[8].SetValue(host.RequestTTY)
+	inputs[9] = textinput.New()
+	inputs[9].Placeholder = "yes, no, force, auto"
+	inputs[9].CharLimit = 10
+	inputs[9].Width = 30
+	inputs[9].SetValue(host.RequestTTY)
 
 	return &editFormModel{
 		hostInputs:       hostInputs,
@@ -253,19 +260,19 @@ func (m *editFormModel) updateFocus() tea.Cmd {
 func (m *editFormModel) getPropertiesForCurrentTab() []int {
 	switch m.currentTab {
 	case 0: // General
-		return []int{0, 1, 2, 3, 4, 6} // hostname, user, port, identity, proxyjump, tags
+		return []int{0, 1, 2, 3, 4, 5, 7} // hostname, user, port, identity, proxyjump, proxycommand, tags
 	case 1: // Advanced
-		return []int{5, 7, 8} // options, remotecommand, requesttty
+		return []int{6, 8, 9} // options, remotecommand, requesttty
 	default:
-		return []int{0, 1, 2, 3, 4, 6}
+		return []int{0, 1, 2, 3, 4, 5, 7}
 	}
 }
 
 // getFirstPropertyForTab returns the first property index for a given tab
 func (m *editFormModel) getFirstPropertyForTab(tab int) int {
-	properties := []int{0, 1, 2, 3, 4, 6} // General tab
+	properties := []int{0, 1, 2, 3, 4, 5, 7} // General tab
 	if tab == 1 {
-		properties = []int{5, 7, 8} // Advanced tab
+		properties = []int{6, 8, 9} // Advanced tab
 	}
 	if len(properties) > 0 {
 		return properties[0]
@@ -580,7 +587,8 @@ func (m *editFormModel) renderEditGeneralTab() string {
 		{2, "Port"},
 		{3, "Identity File"},
 		{4, "Proxy Jump"},
-		{6, "Tags (comma-separated)"},
+		{5, "Proxy Command"},
+		{7, "Tags (comma-separated)"},
 	}
 
 	for _, field := range fields {
@@ -683,9 +691,10 @@ func (m *editFormModel) submitEditForm() tea.Cmd {
 		port := strings.TrimSpace(m.inputs[2].Value())          // portInput
 		identity := strings.TrimSpace(m.inputs[3].Value())      // identityInput
 		proxyJump := strings.TrimSpace(m.inputs[4].Value())     // proxyJumpInput
-		options := strings.TrimSpace(m.inputs[5].Value())       // optionsInput
-		remoteCommand := strings.TrimSpace(m.inputs[7].Value()) // remoteCommandInput
-		requestTTY := strings.TrimSpace(m.inputs[8].Value())    // requestTTYInput
+		proxyCommand := strings.TrimSpace(m.inputs[5].Value())  // proxyCommandInput
+		options := strings.TrimSpace(m.inputs[6].Value())       // optionsInput
+		remoteCommand := strings.TrimSpace(m.inputs[8].Value()) // remoteCommandInput
+		requestTTY := strings.TrimSpace(m.inputs[9].Value())    // requestTTYInput
 
 		// Set defaults
 		if port == "" {
@@ -723,6 +732,7 @@ func (m *editFormModel) submitEditForm() tea.Cmd {
 			Port:          port,
 			Identity:      identity,
 			ProxyJump:     proxyJump,
+			ProxyCommand:  proxyCommand,
 			Options:       options,
 			RemoteCommand: remoteCommand,
 			RequestTTY:    requestTTY,

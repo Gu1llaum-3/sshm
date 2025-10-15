@@ -97,6 +97,7 @@ func (m *infoFormModel) View() string {
 		{"Port", formatOptionalValue(m.host.Port)},
 		{"Identity File", formatOptionalValue(m.host.Identity)},
 		{"ProxyJump", formatOptionalValue(m.host.ProxyJump)},
+		{"ProxyCommand", formatOptionalValue(m.host.ProxyCommand)},
 		{"SSH Options", formatSSHOptions(m.host.Options)},
 		{"Tags", formatTags(m.host.Tags)},
 	}
