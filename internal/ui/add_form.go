@@ -91,6 +91,12 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 	inputs[proxyJumpInput].CharLimit = 200
 	inputs[proxyJumpInput].Width = 50
 
+	// ProxyCommand input
+	inputs[proxyCommandInput] = textinput.New()
+	inputs[proxyCommandInput].Placeholder = "/usr/local/bin/wssh proxy %h"
+	inputs[proxyCommandInput].CharLimit = 200
+	inputs[proxyCommandInput].Width = 50
+
 	// SSH Options input
 	inputs[optionsInput] = textinput.New()
 	inputs[optionsInput].Placeholder = "-o Compression=yes -o ServerAliveInterval=60"
@@ -138,6 +144,7 @@ const (
 	portInput
 	identityInput
 	proxyJumpInput
+	proxyCommandInput
 	tagsInput
 	// Advanced tab inputs
 	optionsInput
@@ -229,11 +236,11 @@ func (m *addFormModel) getFirstInputForTab(tab int) int {
 func (m *addFormModel) getInputsForCurrentTab() []int {
 	switch m.currentTab {
 	case tabGeneral:
-		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, tagsInput}
+		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, proxyCommandInput, tagsInput}
 	case tabAdvanced:
 		return []int{optionsInput, remoteCommandInput, requestTTYInput}
 	default:
-		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, tagsInput}
+		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, proxyCommandInput, tagsInput}
 	}
 }
 
@@ -401,6 +408,7 @@ func (m *addFormModel) renderGeneralTab() string {
 		{portInput, "Port"},
 		{identityInput, "Identity File"},
 		{proxyJumpInput, "ProxyJump"},
+		{proxyCommandInput, "ProxyCommand"}
 		{tagsInput, "Tags (comma-separated)"},
 	}
 
@@ -489,6 +497,7 @@ func (m *addFormModel) submitForm() tea.Cmd {
 		port := strings.TrimSpace(m.inputs[portInput].Value())
 		identity := strings.TrimSpace(m.inputs[identityInput].Value())
 		proxyJump := strings.TrimSpace(m.inputs[proxyJumpInput].Value())
+		proxyCommand := strings.TrimSpace(m.inputs[proxyCommandInput].Value())
 		options := strings.TrimSpace(m.inputs[optionsInput].Value())
 		remoteCommand := strings.TrimSpace(m.inputs[remoteCommandInput].Value())
 		requestTTY := strings.TrimSpace(m.inputs[requestTTYInput].Value())
@@ -526,6 +535,7 @@ func (m *addFormModel) submitForm() tea.Cmd {
 			Port:          port,
 			Identity:      identity,
 			ProxyJump:     proxyJump,
+			ProxyCommand:  proxyCommand,
 			Options:       config.ParseSSHOptionsFromCommand(options),
 			RemoteCommand: remoteCommand,
 			RequestTTY:    requestTTY,

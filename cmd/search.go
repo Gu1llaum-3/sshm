@@ -205,6 +205,7 @@ func outputJSON(hosts []config.SSHHost) {
 		fmt.Printf("    \"port\": \"%s\",\n", escapeJSON(host.Port))
 		fmt.Printf("    \"identity\": \"%s\",\n", escapeJSON(host.Identity))
 		fmt.Printf("    \"proxy_jump\": \"%s\",\n", escapeJSON(host.ProxyJump))
+		fmt.Printf("    \"proxy_command\": \"%s\",\n", escapeJSON(host.ProxyCommand))
 		fmt.Printf("    \"options\": \"%s\",\n", escapeJSON(host.Options))
 		fmt.Printf("    \"tags\": [")
 		for j, tag := range host.Tags {

@@ -19,6 +19,7 @@ type SSHHost struct {
 	Port          string
 	Identity      string
 	ProxyJump     string
+	ProxyCommand  string
 	Options       string
 	RemoteCommand string // Command to execute after SSH connection
 	RequestTTY    string // Request TTY (yes, no, force, auto)
@@ -328,6 +329,10 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			if currentHost != nil {
 				currentHost.ProxyJump = value
 			}
+		case "proxycommand":
+			if currentHost != nil {
+				currentHost.ProxyCommand = value
+			}
 		case "remotecommand":
 			if currentHost != nil {
 				currentHost.RemoteCommand = value
@@ -608,6 +613,13 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 
 	if host.ProxyJump != "" {
 		_, err = file.WriteString(fmt.Sprintf("    ProxyJump %s\n", host.ProxyJump))
+		if err != nil {
+			return err
+		}
+	}
+
+	if host.ProxyCommand != "" {
+		_, err = file.WriteString(fmt.Sprintf("    ProxyCommand=%s\n", host.ProxyCommand))
 		if err != nil {
 			return err
 		}
@@ -1044,6 +1056,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						if newHost.ProxyJump != "" {
 							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
 						}
+						if newHost.ProxyCommand != "" {
+							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
+						}
 						if newHost.RemoteCommand != "" {
 							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
 						}
@@ -1097,6 +1112,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						}
 						if newHost.ProxyJump != "" {
 							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
+						}
+						if newHost.ProxyCommand != "" {
+							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
 						}
 						if newHost.RemoteCommand != "" {
 							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
@@ -1188,6 +1206,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					if newHost.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
 					}
+					if newHost.ProxyCommand != "" {
+						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
+					}
 					if newHost.RemoteCommand != "" {
 						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
 					}
@@ -1241,6 +1262,9 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					}
 					if newHost.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
+					}
+					if newHost.ProxyCommand != "" {
+						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
 					}
 					if newHost.RemoteCommand != "" {
 						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
@@ -1742,6 +1766,9 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 					if commonProperties.ProxyJump != "" {
 						newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
 					}
+					if commonProperties.ProxyCommand != "" {
+						newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
+					}
 					if commonProperties.RemoteCommand != "" {
 						newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
 					}
@@ -1827,6 +1854,9 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 				}
 				if commonProperties.ProxyJump != "" {
 					newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
+				}
+				if commonProperties.ProxyCommand != "" {
+					newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
 				}
 				if commonProperties.RemoteCommand != "" {
 					newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
