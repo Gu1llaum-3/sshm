@@ -44,7 +44,7 @@ SSHM is a beautiful command-line tool that transforms how you manage and connect
 - **🔄 Automatic Conversion** - Seamlessly converts between command-line and config formats
 - **🔄 Automatic Backups** - Backup configurations automatically before changes
 - **✅ Validation** - Prevent configuration errors with built-in validation
-- **🔗 ProxyJump Support** - Secure connection tunneling through bastion hosts
+- **🔗 ProxyJump/ProxyCommand Support** - Secure connection tunneling through bastion hosts
 - **⌨️ Keyboard Shortcuts** - Power user navigation with vim-like shortcuts
 - **🌐 Cross-platform** - Supports Linux, macOS (Intel & Apple Silicon), and Windows
 - **⚡ Lightweight** - Single binary with no dependencies, zero configuration required
@@ -129,6 +129,7 @@ The interactive forms will guide you through configuration:
 - **Port** - SSH port (default: 22)
 - **Identity File** - Private key path
 - **ProxyJump** - Jump server for connection tunneling
+- **ProxyCommand** - Jump command for connection tunneling
 - **SSH Options** - Additional SSH options in `-o` format (e.g., `-o Compression=yes -o ServerAliveInterval=60`)
 - **Tags** - Comma-separated tags for organization
 
@@ -504,6 +505,7 @@ Host backend-prod
     User app
     Port 22
     ProxyJump bastion.company.com
+    ProxyCommand ssh -W %h:%p Jumphost
     IdentityFile ~/.ssh/production_key
     Compression yes
     ServerAliveInterval 300
@@ -520,6 +522,7 @@ SSHM supports all standard SSH configuration options:
 - `Port` - SSH port number
 - `IdentityFile` - Path to private key file
 - `ProxyJump` - Jump server for connection tunneling (e.g., `user@jumphost:port`)
+- `ProxyCommand` - Jump command for connection tunneling (e.g, `ssh -W %h:%p Jumphost`)
 - `Tags` - Custom tags (SSHM extension)
 
 **Additional SSH Options:**
