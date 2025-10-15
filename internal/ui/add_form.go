@@ -49,7 +49,7 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 		}
 	}
 
-	inputs := make([]textinput.Model, 10) // Increased from 9 to 10 for RequestTTY
+	inputs := make([]textinput.Model, 11)
 
 	// Name input
 	inputs[nameInput] = textinput.New()
@@ -93,7 +93,7 @@ func NewAddForm(hostname string, styles Styles, width, height int, configFile st
 
 	// ProxyCommand input
 	inputs[proxyCommandInput] = textinput.New()
-	inputs[proxyCommandInput].Placeholder = "/usr/local/bin/wssh proxy %h"
+	inputs[proxyCommandInput].Placeholder = "ssh -W %h:%p Jumphost"
 	inputs[proxyCommandInput].CharLimit = 200
 	inputs[proxyCommandInput].Width = 50
 
@@ -408,7 +408,7 @@ func (m *addFormModel) renderGeneralTab() string {
 		{portInput, "Port"},
 		{identityInput, "Identity File"},
 		{proxyJumpInput, "ProxyJump"},
-		{proxyCommandInput, "ProxyCommand"}
+		{proxyCommandInput, "ProxyCommand"},
 		{tagsInput, "Tags (comma-separated)"},
 	}
 
