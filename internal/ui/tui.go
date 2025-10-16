@@ -16,7 +16,7 @@ import (
 )
 
 // NewModel creates a new TUI model with the given SSH hosts
-func NewModel(hosts []config.SSHHost, configFile, currentVersion string) Model {
+func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string) Model {
 	// Load application configuration
 	appConfig, err := config.LoadAppConfig()
 	if err != nil {
@@ -54,6 +54,7 @@ func NewModel(hosts []config.SSHHost, configFile, currentVersion string) Model {
 		height:         24,
 		ready:          false,
 		viewMode:       ViewList,
+		searchMode:     searchMode,
 	}
 
 	// Sort hosts according to the default sort mode
@@ -64,6 +65,9 @@ func NewModel(hosts []config.SSHHost, configFile, currentVersion string) Model {
 	ti.Placeholder = "Search hosts or tags..."
 	ti.CharLimit = 50
 	ti.Width = 25
+	if searchMode {
+		ti.Focus()
+	}
 
 	// Use dynamic column width calculation (will fallback to static if width not available)
 	nameWidth, hostnameWidth, tagsWidth, lastLoginWidth := m.calculateDynamicColumnWidths(sortedHosts)
@@ -147,8 +151,8 @@ func NewModel(hosts []config.SSHHost, configFile, currentVersion string) Model {
 }
 
 // RunInteractiveMode starts the interactive TUI interface
-func RunInteractiveMode(hosts []config.SSHHost, configFile, currentVersion string) error {
-	m := NewModel(hosts, configFile, currentVersion)
+func RunInteractiveMode(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string) error {
+	m := NewModel(hosts, configFile, searchMode, currentVersion)
 
 	// Start the application in alt screen mode for clean output
 	p := tea.NewProgram(m, tea.WithAltScreen())
