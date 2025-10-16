@@ -275,11 +275,29 @@ func (m *addFormModel) handleNavigation(key string) tea.Cmd {
 		currentPos++
 	}
 
-	// Wrap around within current tab
+	// Handle transitions between tabs
 	if currentPos >= len(currentTabInputs) {
-		currentPos = 0
+		// Move to next tab
+		if m.currentTab == tabGeneral {
+			// Move to advanced tab
+			m.currentTab = tabAdvanced
+			m.focused = m.getFirstInputForTab(tabAdvanced)
+			return m.updateFocus()
+		} else {
+			// Wrap around to first field of current tab
+			currentPos = 0
+		}
 	} else if currentPos < 0 {
-		currentPos = len(currentTabInputs) - 1
+		// Move to previous tab
+		if m.currentTab == tabAdvanced {
+			// Move to general tab
+			m.currentTab = tabGeneral
+			currentTabInputs = m.getInputsForCurrentTab()
+			currentPos = len(currentTabInputs) - 1
+		} else {
+			// Wrap around to last field of current tab
+			currentPos = len(currentTabInputs) - 1
+		}
 	}
 
 	m.focused = currentTabInputs[currentPos]
