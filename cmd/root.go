@@ -24,6 +24,9 @@ var AppVersion = "dev"
 // configFile holds the path to the SSH config file
 var configFile string
 
+// searchMode enables the focus on search mode at startup
+var searchMode bool
+
 // RootCmd is the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "sshm [host]",
@@ -97,7 +100,7 @@ func runInteractiveMode() {
 	}
 
 	// Run the interactive TUI
-	if err := ui.RunInteractiveMode(hosts, configFile, AppVersion); err != nil {
+	if err := ui.RunInteractiveMode(hosts, configFile, searchMode, AppVersion); err != nil {
 		log.Fatalf("Error running interactive mode: %v", err)
 	}
 }
@@ -219,6 +222,7 @@ func Execute() {
 func init() {
 	// Add the config file flag
 	RootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "SSH config file to use (default: ~/.ssh/config)")
+	RootCmd.PersistentFlags().BoolVarP(&searchMode, "search", "s", false, "Focus on search input at startup")
 
 	// Set custom version template with update check
 	RootCmd.SetVersionTemplate(getVersionWithUpdateCheck())
