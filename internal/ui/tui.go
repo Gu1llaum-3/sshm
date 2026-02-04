@@ -38,7 +38,7 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 	styles := NewStyles(80) // Default width
 
 	// Initialize ping manager with 5 second timeout
-	pingManager := connectivity.NewPingManager(5 * time.Second)
+	pingManager := connectivity.NewPingManager(5*time.Second, configFile)
 
 	// Create the model with default sorting by name
 	m := Model{

@@ -2,11 +2,14 @@ package connectivity
 
 import (
 	"context"
+	"fmt"
 	"net"
-	"github.com/Gu1llaum-3/sshm/internal/config"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Gu1llaum-3/sshm/internal/config"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -45,16 +48,18 @@ type HostPingResult struct {
 
 // PingManager manages SSH connectivity checks for multiple hosts
 type PingManager struct {
-	results map[string]*HostPingResult
-	mutex   sync.RWMutex
-	timeout time.Duration
+	results    map[string]*HostPingResult
+	mutex      sync.RWMutex
+	timeout    time.Duration
+	configFile string
 }
 
 // NewPingManager creates a new ping manager with the specified timeout
-func NewPingManager(timeout time.Duration) *PingManager {
+func NewPingManager(timeout time.Duration, configFile string) *PingManager {
 	return &PingManager{
-		results: make(map[string]*HostPingResult),
-		timeout: timeout,
+		results:    make(map[string]*HostPingResult),
+		timeout:    timeout,
+		configFile: configFile,
 	}
 }
 
@@ -97,6 +102,14 @@ func (pm *PingManager) PingHost(ctx context.Context, host config.SSHHost) *HostP
 
 	// Mark as connecting
 	pm.updateStatus(host.Name, StatusConnecting, nil, 0)
+
+	// If the host uses a ProxyJump or ProxyCommand, we need to use the external SSH command
+	// because implementing jump host support with pure Go ssh library requires
+	// handling authentication for the jump host, which is complex and requires
+	// access to the user's SSH agent or keys.
+	if host.ProxyJump != "" || host.ProxyCommand != "" {
+		return pm.pingWithExternalCommand(ctx, host, start)
+	}
 
 	// Determine the actual hostname and port
 	hostname := host.Hostname
@@ -148,6 +161,53 @@ func (pm *PingManager) PingHost(ctx context.Context, host config.SSHHost) *HostP
 	status := StatusOnline
 	if err != nil && isConnectionError(err) {
 		status = StatusOffline
+	}
+
+	pm.updateStatus(host.Name, status, err, duration)
+	return &HostPingResult{
+		HostName: host.Name,
+		Status:   status,
+		Error:    err,
+		Duration: duration,
+	}
+}
+
+// pingWithExternalCommand pings a host using the external SSH command
+func (pm *PingManager) pingWithExternalCommand(ctx context.Context, host config.SSHHost, start time.Time) *HostPingResult {
+	// Construct the SSH command
+	// ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 host exit
+	args := []string{"-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no"}
+
+	// Set timeout matching the manager's timeout
+	// Convert duration to seconds (rounding up to ensure we don't timeout too early in the command)
+	timeoutSec := int(pm.timeout.Seconds())
+	if timeoutSec < 1 {
+		timeoutSec = 1
+	}
+	args = append(args, "-o", fmt.Sprintf("ConnectTimeout=%d", timeoutSec))
+
+	// If we have a specific config file, use it
+	if pm.configFile != "" {
+		args = append(args, "-F", pm.configFile)
+	}
+
+	// Add the host name and the command to run (exit)
+	args = append(args, host.Name, "exit")
+
+	// Create command with context for timeout cancellation
+	// Note: We used pm.timeout for the ssh command option, but we also respect the context deadline
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+
+	// Run the command
+	err := cmd.Run()
+	duration := time.Since(start)
+
+	var status PingStatus
+	if err != nil {
+		// SSH returns non-zero exit code on connection failure
+		status = StatusOffline
+	} else {
+		status = StatusOnline
 	}
 
 	pm.updateStatus(host.Name, status, err, duration)
