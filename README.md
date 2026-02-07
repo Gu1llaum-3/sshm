@@ -80,6 +80,27 @@ tar -xzf sshm-linux-amd64.tar.gz
 sudo mv sshm-linux-amd64 /usr/local/bin/sshm
 ```
 
+*Nix:*
+```bash
+# Try without installing
+nix run github:Gu1llaum-3/sshm
+
+# Install to profile
+nix profile install github:Gu1llaum-3/sshm
+```
+
+For flake configuration:
+```nix
+# add sshm to your flake inputs
+{
+  inputs.sshm.url = "github:Gu1llaum-3/sshm";
+}
+
+# and then add to your system packages:
+{
+  inputs.sshm.packages.${package.system}.default
+}
+
 *Windows:*
 ```powershell
 # Download and extract
