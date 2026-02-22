@@ -456,15 +456,21 @@ func TestBackupConfigToSSHMDirectory(t *testing.T) {
 	// Create temporary directory for test files
 	tempDir := t.TempDir()
 
-	// Override the home directory for this test
 	originalHome := os.Getenv("HOME")
 	if originalHome == "" {
-		originalHome = os.Getenv("USERPROFILE") // Windows
+		originalHome = os.Getenv("USERPROFILE")
 	}
+	originalXDG := os.Getenv("XDG_CONFIG_HOME")
+	originalAppData := os.Getenv("APPDATA")
 
-	// Set test home directory
 	os.Setenv("HOME", tempDir)
-	defer os.Setenv("HOME", originalHome)
+	os.Setenv("XDG_CONFIG_HOME", tempDir)
+	os.Setenv("APPDATA", tempDir)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		os.Setenv("XDG_CONFIG_HOME", originalXDG)
+		os.Setenv("APPDATA", originalAppData)
+	}()
 
 	// Create a test SSH config file
 	sshDir := filepath.Join(tempDir, ".ssh")

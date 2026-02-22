@@ -11,6 +11,18 @@ import (
 	"sync"
 )
 
+func getHomeDir() (string, error) {
+	home := os.Getenv("HOME")
+	if home != "" {
+		return home, nil
+	}
+	home = os.Getenv("USERPROFILE")
+	if home != "" {
+		return home, nil
+	}
+	return os.UserHomeDir()
+}
+
 // SSHHost represents an SSH host configuration
 type SSHHost struct {
 	Name          string
@@ -33,7 +45,7 @@ type SSHHost struct {
 
 // GetDefaultSSHConfigPath returns the default SSH config path for the current platform
 func GetDefaultSSHConfigPath() (string, error) {
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := getHomeDir()
 	if err != nil {
 		return "", err
 	}
@@ -49,7 +61,7 @@ func GetDefaultSSHConfigPath() (string, error) {
 
 // GetSSHMConfigDir returns the SSHM config directory
 func GetSSHMConfigDir() (string, error) {
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := getHomeDir()
 	if err != nil {
 		return "", err
 	}
@@ -88,7 +100,7 @@ func GetSSHMBackupDir() (string, error) {
 
 // GetSSHDirectory returns the .ssh directory path
 func GetSSHDirectory() (string, error) {
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := getHomeDir()
 	if err != nil {
 		return "", err
 	}
@@ -386,7 +398,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 func processIncludeDirective(pattern string, baseConfigPath string, processedFiles map[string]bool) ([]SSHHost, error) {
 	// Expand tilde to home directory
 	if strings.HasPrefix(pattern, "~") {
-		homeDir, err := os.UserHomeDir()
+		homeDir, err := getHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
 		}
@@ -918,7 +930,7 @@ func quickHostSearchInFile(hostName string, configPath string, processedFiles ma
 func quickSearchInclude(hostName, pattern, baseConfigPath string, processedFiles map[string]bool) (bool, error) {
 	// Expand tilde to home directory
 	if strings.HasPrefix(pattern, "~") {
-		homeDir, err := os.UserHomeDir()
+		homeDir, err := getHomeDir()
 		if err != nil {
 			return false, fmt.Errorf("failed to get home directory: %w", err)
 		}

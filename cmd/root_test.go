@@ -45,7 +45,7 @@ func TestRootCommandFlags(t *testing.T) {
 func TestRootCommandSubcommands(t *testing.T) {
 	// Test that all expected subcommands are registered
 	// Note: completion and help are automatically added by Cobra and may not always appear in Commands()
-	expectedCommands := []string{"add", "edit", "search"}
+	expectedCommands := []string{"add", "edit", "search", "info"}
 
 	commands := RootCmd.Commands()
 	commandNames := make(map[string]bool)

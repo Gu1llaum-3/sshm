@@ -268,11 +268,35 @@ sshm move my-server -c /path/to/custom/ssh_config
 # Search for hosts (interactive filter)
 sshm search
 
+# Print machine-readable info (JSON) for scripting
+sshm info prod-server
+sshm info prod-server --pretty
+
+# With a custom SSH config file
+sshm -c /path/to/custom/ssh_config info prod-server
+
+# Pipe to jq
+sshm info prod-server | jq -r '.result.target.hostname'
+sshm info prod-server | jq -r '.result.target.user'
+
 # Show version information (includes update check)
 sshm --version
 
 # Show help and available commands
 sshm --help
+```
+
+### Host Info (JSON)
+
+`sshm info <hostname>` prints a single JSON object to stdout so you can script against it with `jq`.
+
+```bash
+# Extract fields
+sshm info prod-server | jq -r '.result.target.hostname'
+sshm info prod-server | jq -r '.result.target.port'
+
+# Check not-found (exit code 2)
+sshm info does-not-exist | jq -r '.error.code'
 ```
 
 ### Shell Completion
