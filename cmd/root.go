@@ -196,6 +196,15 @@ func connectToHost(hostName string, remoteCommand []string) {
 		fmt.Printf("Connecting to %s...\n", hostName)
 	}
 
+	sshPath, lookErr := exec.LookPath("ssh")
+	if lookErr == nil {
+		argv := append([]string{"ssh"}, args...)
+		// On Unix, Exec replaces the process and never returns on success.
+		// On Windows, Exec is not supported and returns an error; fall through to the exec.Command fallback.
+		_ = syscall.Exec(sshPath, argv, os.Environ())
+	}
+
+	// Fallback for Windows or if LookPath failed
 	sshCmd := exec.Command("ssh", args...)
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
