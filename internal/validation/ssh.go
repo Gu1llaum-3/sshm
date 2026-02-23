@@ -66,6 +66,25 @@ func ValidateIdentityFile(path string) bool {
 	if path == "" {
 		return true // Optional field
 	}
+	// SSH tokens (e.g. %d, %h, %r, %u) are resolved by SSH at connection time
+	sshTokenRegex := regexp.MustCompile(`%[hprunCdiklLT]`)
+	if sshTokenRegex.MatchString(path) {
+		return true
+	}
+	// Expand environment variables ($VAR and ${VAR}); track undefined ones
+	hasUndefined := false
+	path = os.Expand(path, func(key string) string {
+		val, ok := os.LookupEnv(key)
+		if !ok {
+			hasUndefined = true
+			return "$" + key
+		}
+		return val
+	})
+	// If any variable was undefined, accept the path (SSH will report the error)
+	if hasUndefined {
+		return true
+	}
 	// Expand ~ to home directory
 	if strings.HasPrefix(path, "~/") {
 		homeDir, err := os.UserHomeDir()
