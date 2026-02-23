@@ -16,7 +16,7 @@ import (
 )
 
 // NewModel creates a new TUI model with the given SSH hosts
-func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string) Model {
+func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string, noUpdateCheck bool) Model {
 	// Load application configuration
 	appConfig, err := config.LoadAppConfig()
 	if err != nil {
@@ -24,6 +24,12 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 		fmt.Printf("Warning: Could not load application config: %v, using defaults\n", err)
 		defaultConfig := config.GetDefaultAppConfig()
 		appConfig = &defaultConfig
+	}
+
+	// CLI flag overrides config file setting
+	if noUpdateCheck {
+		f := false
+		appConfig.CheckForUpdates = &f
 	}
 
 	// Initialize the history manager
@@ -151,8 +157,8 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 }
 
 // RunInteractiveMode starts the interactive TUI interface
-func RunInteractiveMode(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string) error {
-	m := NewModel(hosts, configFile, searchMode, currentVersion)
+func RunInteractiveMode(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string, noUpdateCheck bool) error {
+	m := NewModel(hosts, configFile, searchMode, currentVersion, noUpdateCheck)
 
 	// Start the application in alt screen mode for clean output
 	p := tea.NewProgram(m, tea.WithAltScreen())

@@ -18,7 +18,16 @@ type KeyBindings struct {
 
 // AppConfig represents the main application configuration
 type AppConfig struct {
-	KeyBindings KeyBindings `json:"key_bindings"`
+	CheckForUpdates *bool       `json:"check_for_updates,omitempty"`
+	KeyBindings     KeyBindings `json:"key_bindings"`
+}
+
+// IsUpdateCheckEnabled returns true if the update check is enabled (default: true)
+func (c *AppConfig) IsUpdateCheckEnabled() bool {
+	if c == nil || c.CheckForUpdates == nil {
+		return true
+	}
+	return *c.CheckForUpdates
 }
 
 // GetDefaultKeyBindings returns the default key bindings configuration

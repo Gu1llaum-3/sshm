@@ -1,19 +1,16 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/Gu1llaum-3/sshm/internal/config"
 	"github.com/Gu1llaum-3/sshm/internal/history"
 	"github.com/Gu1llaum-3/sshm/internal/ui"
-	"github.com/Gu1llaum-3/sshm/internal/version"
 
 	"github.com/spf13/cobra"
 )
@@ -29,6 +26,9 @@ var forceTTY bool
 
 // searchMode enables the focus on search mode at startup
 var searchMode bool
+
+// noUpdateCheck disables the async update check in the TUI
+var noUpdateCheck bool
 
 // RootCmd is the base command when called without any subcommands
 var RootCmd = &cobra.Command{
@@ -143,7 +143,7 @@ func runInteractiveMode() {
 	}
 
 	// Run the interactive TUI
-	if err := ui.RunInteractiveMode(hosts, configFile, searchMode, AppVersion); err != nil {
+	if err := ui.RunInteractiveMode(hosts, configFile, searchMode, AppVersion, noUpdateCheck); err != nil {
 		log.Fatalf("Error running interactive mode: %v", err)
 	}
 }
@@ -213,30 +213,6 @@ func connectToHost(hostName string, remoteCommand []string) {
 	}
 }
 
-// getVersionWithUpdateCheck returns a custom version string with update check
-func getVersionWithUpdateCheck() string {
-	versionText := fmt.Sprintf("sshm version %s", AppVersion)
-
-	// Check for updates
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	updateInfo, err := version.CheckForUpdates(ctx, AppVersion)
-	if err != nil {
-		// Return just version if check fails
-		return versionText + "\n"
-	}
-
-	if updateInfo != nil && updateInfo.Available {
-		versionText += fmt.Sprintf("\n🚀 Update available: %s → %s (%s)",
-			updateInfo.CurrentVer,
-			updateInfo.LatestVer,
-			updateInfo.ReleaseURL)
-	}
-
-	return versionText + "\n"
-}
-
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {
@@ -258,7 +234,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "SSH config file to use (default: ~/.ssh/config)")
 	RootCmd.Flags().BoolVarP(&forceTTY, "tty", "t", false, "Force pseudo-TTY allocation (useful for interactive remote commands)")
 	RootCmd.PersistentFlags().BoolVarP(&searchMode, "search", "s", false, "Focus on search input at startup")
+	RootCmd.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "Disable automatic update check")
 
-	// Set custom version template with update check
-	RootCmd.SetVersionTemplate(getVersionWithUpdateCheck())
+	RootCmd.SetVersionTemplate("{{.Name}} version {{.Version}}\n")
 }

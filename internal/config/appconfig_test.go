@@ -104,6 +104,58 @@ func TestAppConfigBasics(t *testing.T) {
 	if len(defaultConfig.KeyBindings.QuitKeys) != len(expectedQuitKeys) {
 		t.Errorf("Expected %d quit keys, got %d", len(expectedQuitKeys), len(defaultConfig.KeyBindings.QuitKeys))
 	}
+
+	// CheckForUpdates should be nil by default
+	if defaultConfig.CheckForUpdates != nil {
+		t.Error("Default configuration should have CheckForUpdates as nil")
+	}
+
+	// IsUpdateCheckEnabled should return true by default
+	if !defaultConfig.IsUpdateCheckEnabled() {
+		t.Error("IsUpdateCheckEnabled should return true when CheckForUpdates is nil")
+	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func TestIsUpdateCheckEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   *AppConfig
+		expected bool
+	}{
+		{
+			name:     "nil AppConfig returns true",
+			config:   nil,
+			expected: true,
+		},
+		{
+			name:     "CheckForUpdates nil returns true",
+			config:   &AppConfig{},
+			expected: true,
+		},
+		{
+			name:     "CheckForUpdates true returns true",
+			config:   &AppConfig{CheckForUpdates: boolPtr(true)},
+			expected: true,
+		},
+		{
+			name:     "CheckForUpdates false returns false",
+			config:   &AppConfig{CheckForUpdates: boolPtr(false)},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.IsUpdateCheckEnabled()
+			if result != tt.expected {
+				t.Errorf("IsUpdateCheckEnabled() = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
 }
 
 func TestMergeWithDefaults(t *testing.T) {
@@ -141,6 +193,7 @@ func TestSaveAndLoadAppConfigIntegration(t *testing.T) {
 	configPath := filepath.Join(tempDir, "config.json")
 
 	customConfig := AppConfig{
+		CheckForUpdates: boolPtr(false),
 		KeyBindings: KeyBindings{
 			QuitKeys:       []string{"q"},
 			DisableEscQuit: true,
@@ -177,5 +230,16 @@ func TestSaveAndLoadAppConfigIntegration(t *testing.T) {
 
 	if len(loadedConfig.KeyBindings.QuitKeys) != 1 || loadedConfig.KeyBindings.QuitKeys[0] != "q" {
 		t.Errorf("Expected quit keys to be ['q'], got %v", loadedConfig.KeyBindings.QuitKeys)
+	}
+
+	// Verify CheckForUpdates is correctly persisted and reloaded
+	if loadedConfig.CheckForUpdates == nil {
+		t.Fatal("CheckForUpdates should not be nil after round-trip")
+	}
+	if *loadedConfig.CheckForUpdates != false {
+		t.Errorf("CheckForUpdates should be false after round-trip, got %v", *loadedConfig.CheckForUpdates)
+	}
+	if loadedConfig.IsUpdateCheckEnabled() {
+		t.Error("IsUpdateCheckEnabled should return false when CheckForUpdates is false")
 	}
 }

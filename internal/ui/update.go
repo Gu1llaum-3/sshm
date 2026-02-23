@@ -74,8 +74,8 @@ func (m Model) Init() tea.Cmd {
 	// Basic initialization commands
 	cmds = append(cmds, textinput.Blink)
 
-	// Check for version updates if we have a current version
-	if m.currentVersion != "" {
+	// Check for version updates if we have a current version and updates are enabled
+	if m.currentVersion != "" && m.appConfig.IsUpdateCheckEnabled() {
 		cmds = append(cmds, checkVersionCmd(m.currentVersion))
 	}
 

@@ -279,8 +279,11 @@ sshm -c /path/to/custom/ssh_config info prod-server
 sshm info prod-server | jq -r '.result.target.hostname'
 sshm info prod-server | jq -r '.result.target.user'
 
-# Show version information (includes update check)
+# Show version information
 sshm --version
+
+# Disable automatic update check (useful on air-gapped machines)
+sshm --no-update-check
 
 # Show help and available commands
 sshm --help
@@ -499,16 +502,30 @@ SSHM features asynchronous SSH connectivity checking that provides visual indica
 SSHM includes built-in version checking that notifies you of available updates:
 
 **Features:**
-- **Background checking** - Version check happens asynchronously
+- **Background checking** - Version check happens asynchronously, never blocking startup
 - **Release notifications** - Clear indicators when updates are available
 - **Pre-release detection** - Identifies beta and development versions
 - **GitHub integration** - Direct links to release pages
 - **Non-intrusive** - Updates don't interrupt your workflow
+- **Configurable** - Can be disabled for air-gapped or offline environments
 
 **Update notifications appear:**
 - In the main TUI interface as a subtle notification
-- In the `sshm --version` command output
 - Only when a newer stable version is available
+
+**Disabling update checks:**
+
+Via the CLI flag (one-time):
+```bash
+sshm --no-update-check
+```
+
+Via `~/.config/sshm/config.json` (persistent):
+```json
+{
+  "check_for_updates": false
+}
+```
 
 #### Port Forwarding History
 
@@ -663,9 +680,9 @@ This will be automatically converted to:
     StrictHostKeyChecking no
 ```
 
-### Custom Key Bindings
+### Application Configuration
 
-SSHM supports customizable key bindings through a configuration file. This is particularly useful for users who want to modify the default quit behavior.
+SSHM supports a configuration file to customize its behavior, including key bindings and update checking.
 
 **Configuration File Location:**
 - **Linux/macOS**: `~/.config/sshm/config.json`
@@ -674,6 +691,7 @@ SSHM supports customizable key bindings through a configuration file. This is pa
 **Example Configuration:**
 ```json
 {
+  "check_for_updates": false,
   "key_bindings": {
     "quit_keys": ["q", "ctrl+c"],
     "disable_esc_quit": true
@@ -682,11 +700,15 @@ SSHM supports customizable key bindings through a configuration file. This is pa
 ```
 
 **Available Options:**
+- **check_for_updates**: Boolean to enable or disable the automatic update check at startup. Default: `true`. Set to `false` on air-gapped or offline machines to avoid connection delays.
 - **quit_keys**: Array of keys that will quit the application. Default: `["q", "ctrl+c"]`
 - **disable_esc_quit**: Boolean flag to disable ESC key from quitting the application. Default: `false`
 
 **For Vim Users:**
 If you frequently press ESC accidentally causing the application to quit, set `disable_esc_quit` to `true`. This will disable ESC as a quit key while preserving all other functionality.
+
+**For Air-gapped Machines:**
+If SSHM is slow to start due to DNS timeouts when reaching GitHub, set `check_for_updates` to `false`. You can also use the `--no-update-check` CLI flag for a one-time override without editing the config file.
 
 **Default Configuration:**
 If no configuration file exists, SSHM will automatically create one with default settings that maintain backward compatibility.
