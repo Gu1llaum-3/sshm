@@ -86,6 +86,14 @@ func (m Model) renderListView() string {
 		components = append(components, errorStyle.Render("❌ "+m.errorMessage))
 	}
 
+	// Add indicator when hidden hosts are shown
+	if m.showHidden {
+		hiddenBannerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("11")).
+			Bold(true)
+		components = append(components, hiddenBannerStyle.Render("  [showing hidden hosts — press H to hide]"))
+	}
+
 	// Add the search bar with the appropriate style based on focus
 	searchPrompt := "Search (/ to focus): "
 	if m.searchMode {

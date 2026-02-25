@@ -70,8 +70,10 @@ func (p PortForwardType) String() string {
 type Model struct {
 	table          table.Model
 	searchInput    textinput.Model
-	hosts          []config.SSHHost
+	allHosts       []config.SSHHost // all parsed hosts, including hidden ones
+	hosts          []config.SSHHost // visible hosts (filtered by showHidden)
 	filteredHosts  []config.SSHHost
+	showHidden     bool // when true, hidden-tagged hosts are shown
 	searchMode     bool
 	deleteMode     bool
 	deleteHost     *config.SSHHost // Host to be deleted (with line number for precise targeting)
@@ -106,6 +108,14 @@ type Model struct {
 	// Error handling
 	errorMessage string
 	showingError bool
+}
+
+// applyVisibilityFilter returns hosts filtered according to the showHidden flag.
+func (m Model) applyVisibilityFilter(hosts []config.SSHHost) []config.SSHHost {
+	if m.showHidden {
+		return hosts
+	}
+	return config.FilterVisibleHosts(hosts)
 }
 
 // updateTableStyles updates the table header border color based on focus state

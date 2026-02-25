@@ -75,6 +75,8 @@ Examples:
 			return nil, cobra.ShellCompDirectiveError
 		}
 
+		hosts = config.FilterVisibleHosts(hosts)
+
 		var completions []string
 		toCompleteLower := strings.ToLower(toComplete)
 		for _, host := range hosts {

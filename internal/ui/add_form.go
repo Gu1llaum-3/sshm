@@ -438,7 +438,12 @@ func (m *addFormModel) renderGeneralTab() string {
 		b.WriteString(fieldStyle.Render(field.label))
 		b.WriteString("\n")
 		b.WriteString(m.inputs[field.index].View())
-		b.WriteString("\n\n")
+		b.WriteString("\n")
+		if field.index == tagsInput && m.focused == tagsInput {
+			b.WriteString(m.styles.FormHelp.Render(`  tip: use "hidden" to hide this host from the list`))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 	}
 
 	return b.String()

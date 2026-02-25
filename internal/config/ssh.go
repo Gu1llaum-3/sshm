@@ -1624,6 +1624,27 @@ func GetAllConfigFiles() ([]string, error) {
 	return files, nil
 }
 
+// FilterVisibleHosts returns only hosts that do not have the "hidden" tag.
+func FilterVisibleHosts(hosts []SSHHost) []SSHHost {
+	var visible []SSHHost
+	for _, h := range hosts {
+		if !hostHasTag(h.Tags, "hidden") {
+			visible = append(visible, h)
+		}
+	}
+	return visible
+}
+
+// hostHasTag reports whether the given tag list contains the target tag (case-insensitive).
+func hostHasTag(tags []string, target string) bool {
+	for _, t := range tags {
+		if strings.EqualFold(t, target) {
+			return true
+		}
+	}
+	return false
+}
+
 // GetAllConfigFilesFromBase returns all SSH config files starting from a specific base config file
 func GetAllConfigFilesFromBase(baseConfigPath string) ([]string, error) {
 	if baseConfigPath == "" {

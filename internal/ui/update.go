@@ -187,7 +187,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return m, tea.Quit
 			}
-			m.hosts = m.sortHosts(hosts)
+			m.allHosts = hosts
+			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
 
 			// Reapply search filter if there is one active
 			if m.searchInput.Value() != "" {
@@ -231,7 +232,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return m, tea.Quit
 			}
-			m.hosts = m.sortHosts(hosts)
+			m.allHosts = hosts
+			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
 
 			// Reapply search filter if there is one active
 			if m.searchInput.Value() != "" {
@@ -276,7 +278,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return m, tea.Quit
 			}
-			m.hosts = m.sortHosts(hosts)
+			m.allHosts = hosts
+			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
 
 			// Reapply search filter if there is one active
 			if m.searchInput.Value() != "" {
@@ -535,7 +538,8 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.table.Focus()
 				return m, nil
 			}
-			m.hosts = m.sortHosts(hosts)
+			m.allHosts = hosts
+			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
 
 			// Reapply search filter if there is one active
 			if m.searchInput.Value() != "" {
@@ -703,6 +707,19 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Show help
 			m.helpForm = NewHelpForm(m.styles, m.width, m.height)
 			m.viewMode = ViewHelp
+			return m, nil
+		}
+	case "H":
+		if !m.searchMode && !m.deleteMode {
+			// Toggle visibility of hidden hosts
+			m.showHidden = !m.showHidden
+			m.hosts = m.sortHosts(m.applyVisibilityFilter(m.allHosts))
+			if m.searchInput.Value() != "" {
+				m.filteredHosts = m.filterHosts(m.searchInput.Value())
+			} else {
+				m.filteredHosts = m.hosts
+			}
+			m.updateTableRows()
 			return m, nil
 		}
 	case "s":

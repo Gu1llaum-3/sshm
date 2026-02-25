@@ -30,7 +30,7 @@ SSHM is a beautiful command-line tool that transforms how you manage and connect
 - **⚡ Quick Connect** - Connect to any host instantly through the TUI or the CLI with `sshm <host>`
 - **🔄 Port Forwarding** - Easy setup for Local, Remote, and Dynamic (SOCKS) forwarding with history persistence
 - **📝 Easy Management** - Add, edit, move, and manage SSH configurations seamlessly
-- **🏷️ Tag Support** - Organize your hosts with custom tags for better categorization
+- **🏷️ Tag Support** - Organize your hosts with custom tags for better categorization; use the special `hidden` tag to exclude hosts from the list while keeping them connectable
 - **🔍 Smart Search** - Find hosts quickly with built-in filtering and search
 - **📝 Real-time Status** - Live SSH connectivity indicators with asynchronous ping checks and color-coded status
 - **🔔 Smart Updates** - Automatic version checking with update notifications
@@ -106,6 +106,7 @@ sshm
 - `d` - Delete selected host
 - `m` - Move host to another config file (requires SSH Include directives)
 - `f` - Port forwarding setup
+- `H` - Toggle hidden hosts visibility
 - `q` - Quit
 - `/` - Search/filter hosts
 
@@ -647,7 +648,7 @@ SSHM supports all standard SSH configuration options:
 - `IdentityFile` - Path to private key file
 - `ProxyJump` - Jump server for connection tunneling (e.g., `user@jumphost:port`)
 - `ProxyCommand` - Jump command for connection tunneling (e.g, `ssh -W %h:%p Jumphost`)
-- `Tags` - Custom tags (SSHM extension)
+- `Tags` - Custom tags (SSHM extension); the special tag `hidden` hides the host from the TUI and `sshm search` while keeping it connectable via `sshm <host>`
 
 **Additional SSH Options:**
 You can add any valid SSH option using the "SSH Options" field in the interactive forms. Enter them in command-line format (e.g., `-o Compression=yes -o ServerAliveInterval=60`) and SSHM will automatically convert them to the proper SSH config format.

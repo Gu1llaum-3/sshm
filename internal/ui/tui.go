@@ -48,7 +48,7 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 
 	// Create the model with default sorting by name
 	m := Model{
-		hosts:          hosts,
+		allHosts:       hosts,
 		historyManager: historyManager,
 		pingManager:    pingManager,
 		sortMode:       SortByName,
@@ -63,8 +63,12 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 		searchMode:     searchMode,
 	}
 
+	// Apply visibility filter (showHidden is false by default)
+	visibleHosts := m.applyVisibilityFilter(hosts)
+	m.hosts = visibleHosts
+
 	// Sort hosts according to the default sort mode
-	sortedHosts := m.sortHosts(hosts)
+	sortedHosts := m.sortHosts(visibleHosts)
 
 	// Create the search input
 	ti := textinput.New()

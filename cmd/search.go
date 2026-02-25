@@ -55,6 +55,9 @@ func runSearch(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Filter out hidden hosts
+	hosts = config.FilterVisibleHosts(hosts)
+
 	// Get search query
 	var query string
 	if len(args) > 0 {
