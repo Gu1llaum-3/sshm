@@ -62,3 +62,9 @@ release/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Nix
+result
+result-*
+.direnv
+.envrc.cache
