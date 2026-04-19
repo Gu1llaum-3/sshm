@@ -18,8 +18,9 @@ type KeyBindings struct {
 
 // AppConfig represents the main application configuration
 type AppConfig struct {
-	CheckForUpdates *bool       `json:"check_for_updates,omitempty"`
-	KeyBindings     KeyBindings `json:"key_bindings"`
+	CheckForUpdates    *bool       `json:"check_for_updates,omitempty"`
+	FocusSearchOnStart bool        `json:"focus_search_on_start"`
+	KeyBindings        KeyBindings `json:"key_bindings"`
 }
 
 // IsUpdateCheckEnabled returns true if the update check is enabled (default: true)
