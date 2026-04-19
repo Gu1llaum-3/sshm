@@ -125,6 +125,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.portForwardForm.height = m.height
 			m.portForwardForm.styles = m.styles
 		}
+		if m.keysView != nil {
+			m.keysView.width = m.width
+			m.keysView.height = m.height
+			m.keysView.styles = m.styles
+		}
 		if m.helpForm != nil {
 			m.helpForm.width = m.width
 			m.helpForm.height = m.height
@@ -134,6 +139,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fileSelectorForm.width = m.width
 			m.fileSelectorForm.height = m.height
 			m.fileSelectorForm.styles = m.styles
+		}
+
+		if routedModel, routedCmd, ok := m.routeActiveSubviewMsg(msg); ok {
+			return routedModel, routedCmd
 		}
 		return m, nil
 
@@ -243,16 +252,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			m.updateTableRows()
-			m.viewMode = ViewList
 			m.editForm = nil
+			if m.returnToKeys {
+				m.returnToKeys = false
+				m.keysView = NewKeysView(m.styles, m.width, m.height, m.configFile)
+				m.viewMode = ViewKeys
+				return m, m.keysView.Init()
+			}
+			m.viewMode = ViewList
 			m.table.Focus()
 			return m, nil
 		}
 
 	case editFormCancelMsg:
-		// Cancel: return to list view
-		m.viewMode = ViewList
 		m.editForm = nil
+		if m.returnToKeys && m.keysView != nil {
+			m.returnToKeys = false
+			m.viewMode = ViewKeys
+			return m, nil
+		}
+		m.viewMode = ViewList
 		m.table.Focus()
 		return m, nil
 
@@ -303,9 +322,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case infoFormCancelMsg:
-		// Cancel: return to list view
-		m.viewMode = ViewList
 		m.infoForm = nil
+		if m.returnToKeys && m.keysView != nil {
+			m.returnToKeys = false
+			m.viewMode = ViewKeys
+			return m, nil
+		}
+		m.viewMode = ViewList
 		m.table.Focus()
 		return m, nil
 
@@ -336,6 +359,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.editForm = editForm
 		m.infoForm = nil
+		m.viewMode = ViewEdit
+		return m, textinput.Blink
+
+	case keyOpenHostInfoMsg:
+		configFile := m.configFile
+		if msg.configFile != "" {
+			configFile = msg.configFile
+		}
+		infoForm, err := NewInfoForm(msg.hostName, m.styles, m.width, m.height, configFile)
+		if err != nil {
+			if m.keysView != nil {
+				m.keysView.status = err.Error()
+				m.keysView.statusErr = true
+				m.keysView.hostRefs = false
+			}
+			return m, nil
+		}
+		m.infoForm = infoForm
+		m.returnToKeys = true
+		m.viewMode = ViewInfo
+		return m, nil
+
+	case keyOpenHostEditMsg:
+		configFile := m.configFile
+		if msg.configFile != "" {
+			configFile = msg.configFile
+		}
+		editForm, err := NewEditForm(msg.hostName, m.styles, m.width, m.height, configFile)
+		if err != nil {
+			if m.keysView != nil {
+				m.keysView.status = err.Error()
+				m.keysView.statusErr = true
+				m.keysView.hostRefs = false
+			}
+			return m, nil
+		}
+		m.editForm = editForm
+		m.returnToKeys = true
 		m.viewMode = ViewEdit
 		return m, textinput.Blink
 
@@ -385,65 +446,90 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table.Focus()
 		return m, nil
 
+	case keysViewCloseMsg:
+		m.viewMode = ViewList
+		m.keysView = nil
+		m.returnToKeys = false
+		m.table.Focus()
+		return m, nil
+
+	case keyPickerSelectMsg, keyPickerCancelMsg, keyPickerCreateMsg, keyCreateFinishedMsg, keyCreateCancelMsg:
+		if routedModel, routedCmd, ok := m.routeActiveSubviewMsg(msg); ok {
+			return routedModel, routedCmd
+		}
+		return m, nil
+
 	case tea.KeyMsg:
-		// Handle view-specific key presses
-		switch m.viewMode {
-		case ViewAdd:
-			if m.addForm != nil {
-				var newForm *addFormModel
-				newForm, cmd = m.addForm.Update(msg)
-				m.addForm = newForm
-				return m, cmd
-			}
-		case ViewEdit:
-			if m.editForm != nil {
-				var updatedModel tea.Model
-				updatedModel, cmd = m.editForm.Update(msg)
-				m.editForm = updatedModel.(*editFormModel)
-				return m, cmd
-			}
-		case ViewMove:
-			if m.moveForm != nil {
-				var newForm *moveFormModel
-				newForm, cmd = m.moveForm.Update(msg)
-				m.moveForm = newForm
-				return m, cmd
-			}
-		case ViewInfo:
-			if m.infoForm != nil {
-				var newForm *infoFormModel
-				newForm, cmd = m.infoForm.Update(msg)
-				m.infoForm = newForm
-				return m, cmd
-			}
-		case ViewPortForward:
-			if m.portForwardForm != nil {
-				var newForm *portForwardModel
-				newForm, cmd = m.portForwardForm.Update(msg)
-				m.portForwardForm = newForm
-				return m, cmd
-			}
-		case ViewHelp:
-			if m.helpForm != nil {
-				var newForm *helpModel
-				newForm, cmd = m.helpForm.Update(msg)
-				m.helpForm = newForm
-				return m, cmd
-			}
-		case ViewFileSelector:
-			if m.fileSelectorForm != nil {
-				var newForm *fileSelectorModel
-				newForm, cmd = m.fileSelectorForm.Update(msg)
-				m.fileSelectorForm = newForm
-				return m, cmd
-			}
-		case ViewList:
-			// Handle list view keys
-			return m.handleListViewKeys(msg)
+		if routedModel, routedCmd, ok := m.routeActiveSubviewMsg(msg); ok {
+			return routedModel, routedCmd
 		}
 	}
 
+	if routedModel, routedCmd, ok := m.routeActiveSubviewMsg(msg); ok {
+		return routedModel, routedCmd
+	}
+
 	return m, cmd
+}
+
+func (m Model) routeActiveSubviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch m.viewMode {
+	case ViewAdd:
+		if m.addForm != nil {
+			newForm, cmd := m.addForm.Update(msg)
+			m.addForm = newForm
+			return m, cmd, true
+		}
+	case ViewEdit:
+		if m.editForm != nil {
+			updatedModel, cmd := m.editForm.Update(msg)
+			m.editForm = updatedModel.(*editFormModel)
+			return m, cmd, true
+		}
+	case ViewMove:
+		if m.moveForm != nil {
+			newForm, cmd := m.moveForm.Update(msg)
+			m.moveForm = newForm
+			return m, cmd, true
+		}
+	case ViewInfo:
+		if m.infoForm != nil {
+			newForm, cmd := m.infoForm.Update(msg)
+			m.infoForm = newForm
+			return m, cmd, true
+		}
+	case ViewPortForward:
+		if m.portForwardForm != nil {
+			newForm, cmd := m.portForwardForm.Update(msg)
+			m.portForwardForm = newForm
+			return m, cmd, true
+		}
+	case ViewKeys:
+		if m.keysView != nil {
+			newForm, cmd := m.keysView.Update(msg)
+			m.keysView = newForm
+			return m, cmd, true
+		}
+	case ViewHelp:
+		if m.helpForm != nil {
+			newForm, cmd := m.helpForm.Update(msg)
+			m.helpForm = newForm
+			return m, cmd, true
+		}
+	case ViewFileSelector:
+		if m.fileSelectorForm != nil {
+			newForm, cmd := m.fileSelectorForm.Update(msg)
+			m.fileSelectorForm = newForm
+			return m, cmd, true
+		}
+	case ViewList:
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			model, cmd := m.handleListViewKeys(keyMsg)
+			return model, cmd, true
+		}
+	}
+
+	return m, nil, false
 }
 
 func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -701,6 +787,13 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.viewMode = ViewPortForward
 				return m, textinput.Blink
 			}
+		}
+	case "K":
+		if !m.searchMode && !m.deleteMode {
+			m.keysView = NewKeysView(m.styles, m.width, m.height, m.configFile)
+			m.returnToKeys = false
+			m.viewMode = ViewKeys
+			return m, m.keysView.Init()
 		}
 	case "h":
 		if !m.searchMode && !m.deleteMode {

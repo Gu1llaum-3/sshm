@@ -40,6 +40,7 @@ const (
 	ViewMove
 	ViewInfo
 	ViewPortForward
+	ViewKeys
 	ViewHelp
 	ViewFileSelector
 )
@@ -96,8 +97,10 @@ type Model struct {
 	moveForm         *moveFormModel
 	infoForm         *infoFormModel
 	portForwardForm  *portForwardModel
+	keysView         *keysViewModel
 	helpForm         *helpModel
 	fileSelectorForm *fileSelectorModel
+	returnToKeys     bool
 
 	// Terminal size and styles
 	width  int

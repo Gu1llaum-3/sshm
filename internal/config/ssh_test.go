@@ -706,6 +706,143 @@ Include subdir/*.conf
 	}
 }
 
+func TestLookupSSHHostsByNameFromFileReturnsConcreteMatchesAcrossIncludes(t *testing.T) {
+	tempDir := t.TempDir()
+
+	mainConfig := filepath.Join(tempDir, "config")
+	mainConfigContent := `Host shared
+    HostName primary.example.com
+
+Include included.conf
+`
+
+	if err := os.WriteFile(mainConfig, []byte(mainConfigContent), 0600); err != nil {
+		t.Fatalf("Failed to create main config: %v", err)
+	}
+
+	includedConfig := filepath.Join(tempDir, "included.conf")
+	includedConfigContent := `Host shared
+    HostName included.example.com
+`
+
+	if err := os.WriteFile(includedConfig, []byte(includedConfigContent), 0600); err != nil {
+		t.Fatalf("Failed to create included config: %v", err)
+	}
+
+	matches, err := LookupSSHHostsByNameFromFile("shared", mainConfig)
+	if err != nil {
+		t.Fatalf("LookupSSHHostsByNameFromFile() error = %v", err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("len(matches) = %d, want 2", len(matches))
+	}
+
+	gotFiles := map[string]bool{}
+	gotHostnames := map[string]bool{}
+	for _, match := range matches {
+		gotFiles[match.SourceFile] = true
+		gotHostnames[match.Hostname] = true
+		if match.LineNumber <= 0 {
+			t.Fatalf("LineNumber = %d, want positive line number", match.LineNumber)
+		}
+	}
+
+	if !gotFiles[mainConfig] || !gotFiles[includedConfig] {
+		t.Fatalf("SourceFile set = %#v, want both %q and %q", gotFiles, mainConfig, includedConfig)
+	}
+	if !gotHostnames["primary.example.com"] || !gotHostnames["included.example.com"] {
+		t.Fatalf("Hostname set = %#v, want both concrete matches", gotHostnames)
+	}
+}
+
+func TestGetUniqueSSHHostFromFileRejectsAmbiguousMatches(t *testing.T) {
+	tempDir := t.TempDir()
+
+	mainConfig := filepath.Join(tempDir, "config")
+	mainConfigContent := `Host shared
+    HostName primary.example.com
+
+Include included.conf
+`
+
+	if err := os.WriteFile(mainConfig, []byte(mainConfigContent), 0600); err != nil {
+		t.Fatalf("Failed to create main config: %v", err)
+	}
+
+	includedConfig := filepath.Join(tempDir, "included.conf")
+	includedConfigContent := `Host shared
+    HostName included.example.com
+`
+
+	if err := os.WriteFile(includedConfig, []byte(includedConfigContent), 0600); err != nil {
+		t.Fatalf("Failed to create included config: %v", err)
+	}
+
+	host, err := GetUniqueSSHHostFromFile("shared", mainConfig)
+	if err == nil {
+		t.Fatalf("GetUniqueSSHHostFromFile() error = nil, want ambiguity error")
+	}
+	if host != nil {
+		t.Fatalf("host = %#v, want nil on ambiguity", host)
+	}
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("error = %q, want ambiguity wording", err)
+	}
+}
+
+func TestGetUniqueSSHHostFromFileReturnsUniqueMatch(t *testing.T) {
+	tempDir := t.TempDir()
+
+	mainConfig := filepath.Join(tempDir, "config")
+	mainConfigContent := `Host only
+    HostName unique.example.com
+    User deploy
+`
+
+	if err := os.WriteFile(mainConfig, []byte(mainConfigContent), 0600); err != nil {
+		t.Fatalf("Failed to create main config: %v", err)
+	}
+
+	host, err := GetUniqueSSHHostFromFile("only", mainConfig)
+	if err != nil {
+		t.Fatalf("GetUniqueSSHHostFromFile() error = %v", err)
+	}
+	if host == nil {
+		t.Fatal("host = nil, want unique match")
+	}
+	if host.Hostname != "unique.example.com" || host.User != "deploy" {
+		t.Fatalf("host = %#v, want concrete unique match", host)
+	}
+	if host.SourceFile != mainConfig {
+		t.Fatalf("SourceFile = %q, want %q", host.SourceFile, mainConfig)
+	}
+}
+
+func TestParseSSHConfigDoesNotAttachMatchIdentityToHost(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config")
+	content := `Host demo
+    HostName 203.0.113.10
+
+Match user root
+    IdentityFile ~/.ssh/id_match
+`
+	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	hosts, err := ParseSSHConfigFile(configPath)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("len(hosts) = %d, want 1", len(hosts))
+	}
+	if hosts[0].Identity != "" {
+		t.Fatalf("Identity = %q, want empty because Match block identity is not a Host declaration", hosts[0].Identity)
+	}
+}
+
 func TestGetAllConfigFilesFromBase(t *testing.T) {
 	// Create temporary directory for test files
 	tempDir := t.TempDir()
