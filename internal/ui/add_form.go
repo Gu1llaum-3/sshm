@@ -5,9 +5,11 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Gu1llaum-3/sshm/internal/config"
+	keypkg "github.com/Gu1llaum-3/sshm/internal/key"
 	"github.com/Gu1llaum-3/sshm/internal/validation"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -24,6 +26,13 @@ type addFormModel struct {
 	width      int
 	height     int
 	configFile string
+	keyPicker  *keyPickerModel
+	keyCreate  *keyCreateFormModel
+}
+
+type addFormField struct {
+	index int
+	label string
 }
 
 // NewAddForm creates a new add form model
@@ -152,19 +161,98 @@ const (
 	requestTTYInput
 )
 
+var (
+	addGeneralInputs  = [...]int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, proxyCommandInput, tagsInput}
+	addAdvancedInputs = [...]int{optionsInput, remoteCommandInput, requestTTYInput}
+)
+
 // Messages for communication with parent model
 type addFormSubmitMsg struct {
 	hostname string
 	err      error
 }
 
+type addFormDeployFinishedMsg struct {
+	err error
+}
+
 type addFormCancelMsg struct{}
+
+var runAddFormDeploy = func(opts keypkg.DeployOptions) tea.Cmd {
+	return runUIDeployCommand(opts, func(err error) tea.Msg {
+		return addFormDeployFinishedMsg{err: err}
+	})
+}
 
 func (m *addFormModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
 func (m *addFormModel) Update(msg tea.Msg) (*addFormModel, tea.Cmd) {
+	if m.keyCreate != nil {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			m.styles = NewStyles(m.width)
+			m.keyCreate.width = m.width
+			m.keyCreate.height = m.height
+			m.keyCreate.styles = m.styles
+			return m, nil
+		case keyCreateFinishedMsg:
+			if msg.err != nil {
+				m.keyCreate.err = msg.err.Error()
+				return m, nil
+			}
+			m.keyCreate = nil
+			m.inputs[identityInput].SetValue(msg.path)
+			m.focused = identityInput
+			m.currentTab = tabGeneral
+			return m, m.updateFocus()
+		case keyCreateCancelMsg:
+			m.keyCreate = nil
+			m.focused = identityInput
+			m.currentTab = tabGeneral
+			return m, m.updateFocus()
+		}
+
+		newForm, cmd := m.keyCreate.Update(msg)
+		m.keyCreate = newForm
+		return m, cmd
+	}
+
+	if m.keyPicker != nil {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			m.styles = NewStyles(m.width)
+			m.keyPicker.width = m.width
+			m.keyPicker.height = m.height
+			m.keyPicker.styles = m.styles
+			return m, nil
+		case keyPickerSelectMsg:
+			m.keyPicker = nil
+			m.inputs[identityInput].SetValue(msg.path)
+			m.focused = identityInput
+			m.currentTab = tabGeneral
+			return m, m.updateFocus()
+		case keyPickerCancelMsg:
+			m.keyPicker = nil
+			m.focused = identityInput
+			m.currentTab = tabGeneral
+			return m, m.updateFocus()
+		case keyPickerCreateMsg:
+			m.keyPicker = nil
+			m.keyCreate = NewKeyCreateForm(m.styles, m.width, m.height)
+			return m, m.keyCreate.Init()
+		}
+
+		newPicker, cmd := m.keyPicker.Update(msg)
+		m.keyPicker = newPicker
+		return m, cmd
+	}
+
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -183,6 +271,9 @@ func (m *addFormModel) Update(msg tea.Msg) (*addFormModel, tea.Cmd) {
 			// Allow submission from any field with Ctrl+S (Save)
 			return m, m.submitForm()
 
+		case "ctrl+d":
+			return m, m.deployAndSave()
+
 		case "ctrl+j":
 			// Switch to next tab
 			m.currentTab = (m.currentTab + 1) % 2
@@ -195,7 +286,24 @@ func (m *addFormModel) Update(msg tea.Msg) (*addFormModel, tea.Cmd) {
 			m.focused = m.getFirstInputForTab(m.currentTab)
 			return m, m.updateFocus()
 
-		case "tab", "shift+tab", "enter", "up", "down":
+		case "ctrl+g":
+			if m.currentTab == tabGeneral && m.focused == identityInput {
+				m.keyCreate = NewKeyCreateForm(m.styles, m.width, m.height)
+				return m, m.keyCreate.Init()
+			}
+
+		case "ctrl+o":
+			if m.currentTab == tabGeneral && m.focused == identityInput {
+				return m, m.openKeyPicker()
+			}
+
+		case "enter":
+			if m.currentTab == tabGeneral && m.focused == identityInput {
+				return m, m.openKeyPicker()
+			}
+			return m, m.handleNavigation(msg.String())
+
+		case "tab", "shift+tab", "up", "down":
 			return m, m.handleNavigation(msg.String())
 		}
 
@@ -208,6 +316,13 @@ func (m *addFormModel) Update(msg tea.Msg) (*addFormModel, tea.Cmd) {
 			// Don't quit here, let parent handle the success
 		}
 		return m, nil
+	case addFormDeployFinishedMsg:
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		return m, m.submitForm()
 	}
 
 	// Update inputs
@@ -236,11 +351,11 @@ func (m *addFormModel) getFirstInputForTab(tab int) int {
 func (m *addFormModel) getInputsForCurrentTab() []int {
 	switch m.currentTab {
 	case tabGeneral:
-		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, proxyCommandInput, tagsInput}
+		return addGeneralInputs[:]
 	case tabAdvanced:
-		return []int{optionsInput, remoteCommandInput, requestTTYInput}
+		return addAdvancedInputs[:]
 	default:
-		return []int{nameInput, hostnameInput, userInput, portInput, identityInput, proxyJumpInput, proxyCommandInput, tagsInput}
+		return addGeneralInputs[:]
 	}
 }
 
@@ -261,13 +376,9 @@ func (m *addFormModel) updateFocus() tea.Cmd {
 func (m *addFormModel) handleNavigation(key string) tea.Cmd {
 	currentTabInputs := m.getInputsForCurrentTab()
 
-	// Find current position within the tab
-	currentPos := 0
-	for i, input := range currentTabInputs {
-		if input == m.focused {
-			currentPos = i
-			break
-		}
+	currentPos := slices.Index(currentTabInputs, m.focused)
+	if currentPos < 0 {
+		currentPos = 0
 	}
 
 	// Handle form submission on last field of Advanced tab
@@ -316,9 +427,19 @@ func (m *addFormModel) View() string {
 		return ""
 	}
 
-	// Check if terminal height is sufficient
-	if !m.isHeightSufficient() {
+	if m.keyCreate != nil {
+		return m.keyCreate.View()
+	}
+
+	if m.keyPicker != nil {
+		return m.keyPicker.View()
+	}
+
+	if m.height < m.getMinimumCompactHeight() {
 		return m.renderHeightWarning()
+	}
+	if !m.isHeightSufficient() {
+		return m.renderCompactView()
 	}
 
 	var b strings.Builder
@@ -346,7 +467,9 @@ func (m *addFormModel) View() string {
 	// Help text
 	b.WriteString(m.styles.FormHelp.Render("Tab/Shift+Tab: navigate • Ctrl+J/K: switch tabs"))
 	b.WriteString("\n")
-	b.WriteString(m.styles.FormHelp.Render("Enter on last field: submit • Ctrl+S: save • Ctrl+C/Esc: cancel"))
+	b.WriteString(m.styles.FormHelp.Render("Identity File: Enter/Ctrl+O choose key • Ctrl+G generate • Enter on last field: submit"))
+	b.WriteString("\n")
+	b.WriteString(m.styles.FormHelp.Render("Ctrl+S: save • Ctrl+D: deploy selected key then save • Esc: cancel"))
 	b.WriteString("\n")
 	b.WriteString(m.styles.FormHelp.Render("* Required fields"))
 
@@ -379,6 +502,10 @@ func (m *addFormModel) getMinimumHeight() int {
 	return titleLines + tabLines + fieldsLines + helpLines + errorLines + 1 // +1 minimal safety margin
 }
 
+func (m *addFormModel) getMinimumCompactHeight() int {
+	return 10
+}
+
 // isHeightSufficient checks if the current terminal height is sufficient
 func (m *addFormModel) isHeightSufficient() bool {
 	return m.height >= m.getMinimumHeight()
@@ -386,13 +513,13 @@ func (m *addFormModel) isHeightSufficient() bool {
 
 // renderHeightWarning renders a warning message when height is insufficient
 func (m *addFormModel) renderHeightWarning() string {
-	required := m.getMinimumHeight()
+	required := m.getMinimumCompactHeight()
 	current := m.height
 
 	warning := m.styles.ErrorText.Render("⚠️  Terminal height is too small!")
-	details := m.styles.FormField.Render(fmt.Sprintf("Current: %d lines, Required: %d lines", current, required))
-	instruction := m.styles.FormHelp.Render("Please resize your terminal window and try again.")
-	instruction2 := m.styles.FormHelp.Render("Press Ctrl+C to cancel or resize terminal window.")
+	details := m.styles.FormField.Render(fmt.Sprintf("Current: %d lines, Need at least: %d lines", current, required))
+	instruction := m.styles.FormHelp.Render("Compact mode is available, but this terminal is still too short.")
+	instruction2 := m.styles.FormHelp.Render("Resize the terminal or cancel with Esc/Ctrl+C.")
 
 	return warning + "\n\n" + details + "\n\n" + instruction + "\n" + instruction2
 }
@@ -416,19 +543,7 @@ func (m *addFormModel) renderTabs() string {
 func (m *addFormModel) renderGeneralTab() string {
 	var b strings.Builder
 
-	fields := []struct {
-		index int
-		label string
-	}{
-		{nameInput, "Host Name *"},
-		{hostnameInput, "Hostname/IP *"},
-		{userInput, "User"},
-		{portInput, "Port"},
-		{identityInput, "Identity File"},
-		{proxyJumpInput, "ProxyJump"},
-		{proxyCommandInput, "ProxyCommand"},
-		{tagsInput, "Tags (comma-separated)"},
-	}
+	fields := m.generalTabFields()
 
 	for _, field := range fields {
 		fieldStyle := m.styles.FormField
@@ -443,6 +558,14 @@ func (m *addFormModel) renderGeneralTab() string {
 			b.WriteString(m.styles.FormHelp.Render(`  tip: use "hidden" to hide this host from the list`))
 			b.WriteString("\n")
 		}
+		if field.index == identityInput && m.focused == identityInput {
+			b.WriteString(m.styles.FormHelp.Render("  tip: Enter/Ctrl+O choose a key • Ctrl+G generates one • keep typing for a custom path"))
+			b.WriteString("\n")
+		}
+		if field.index == hostnameInput && m.focused == hostnameInput {
+			b.WriteString(m.styles.FormHelp.Render("  tip: Ctrl+D deploys the selected key to this host and saves on success"))
+			b.WriteString("\n")
+		}
 		b.WriteString("\n")
 	}
 
@@ -453,14 +576,7 @@ func (m *addFormModel) renderGeneralTab() string {
 func (m *addFormModel) renderAdvancedTab() string {
 	var b strings.Builder
 
-	fields := []struct {
-		index int
-		label string
-	}{
-		{optionsInput, "SSH Options"},
-		{remoteCommandInput, "Remote Command"},
-		{requestTTYInput, "Request TTY"},
-	}
+	fields := m.advancedTabFields()
 
 	for _, field := range fields {
 		fieldStyle := m.styles.FormField
@@ -474,6 +590,88 @@ func (m *addFormModel) renderAdvancedTab() string {
 	}
 
 	return b.String()
+}
+
+func (m *addFormModel) renderCompactView() string {
+	var b strings.Builder
+
+	b.WriteString(m.styles.FormTitle.Render("Add SSH Host Configuration"))
+	b.WriteString("\n")
+	b.WriteString(m.styles.FormHelp.Render("Compact mode"))
+	b.WriteString("\n\n")
+	b.WriteString(m.renderTabs())
+	b.WriteString("\n\n")
+
+	fields := m.fieldsForCurrentTab()
+	currentField, currentPos := m.currentField(fields)
+
+	b.WriteString(m.styles.FormHelp.Render(fmt.Sprintf("Field %d/%d", currentPos+1, len(fields))))
+	b.WriteString("\n")
+	fieldStyle := m.styles.FocusedLabel
+	b.WriteString(fieldStyle.Render(currentField.label))
+	b.WriteString("\n")
+	b.WriteString(m.inputs[currentField.index].View())
+	b.WriteString("\n")
+
+	if currentField.index == tagsInput {
+		b.WriteString(m.styles.FormHelp.Render(`tip: use "hidden" to hide this host from the list`))
+		b.WriteString("\n")
+	}
+	if currentField.index == identityInput {
+		b.WriteString(m.styles.FormHelp.Render("tip: Enter/Ctrl+O choose • Ctrl+G generate • type manually for a custom path"))
+		b.WriteString("\n")
+	}
+	if currentField.index == hostnameInput {
+		b.WriteString(m.styles.FormHelp.Render("tip: Ctrl+D deploys the selected key and saves only if deploy succeeds"))
+		b.WriteString("\n")
+	}
+
+	if m.err != "" {
+		b.WriteString("\n")
+		b.WriteString(m.styles.ErrorText.Render("Error: " + m.err))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(m.styles.FormHelp.Render("↑/↓ or Tab move • Ctrl+S save • Ctrl+D deploy+save • Ctrl+J/K tabs • Enter submit on last field • Esc cancel"))
+	return b.String()
+}
+
+func (m *addFormModel) generalTabFields() []addFormField {
+	return []addFormField{
+		{nameInput, "Host Name *"},
+		{hostnameInput, "Hostname/IP *"},
+		{userInput, "User"},
+		{portInput, "Port"},
+		{identityInput, "Identity File"},
+		{proxyJumpInput, "ProxyJump"},
+		{proxyCommandInput, "ProxyCommand"},
+		{tagsInput, "Tags (comma-separated)"},
+	}
+}
+
+func (m *addFormModel) advancedTabFields() []addFormField {
+	return []addFormField{
+		{optionsInput, "SSH Options"},
+		{remoteCommandInput, "Remote Command"},
+		{requestTTYInput, "Request TTY"},
+	}
+}
+
+func (m *addFormModel) fieldsForCurrentTab() []addFormField {
+	if m.currentTab == tabAdvanced {
+		return m.advancedTabFields()
+	}
+	return m.generalTabFields()
+}
+
+func (m *addFormModel) currentField(fields []addFormField) (addFormField, int) {
+	for i, field := range fields {
+		if field.index == m.focused {
+			return field, i
+		}
+	}
+	return fields[0], 0
 }
 
 // Standalone wrapper for add form
@@ -539,16 +737,7 @@ func (m *addFormModel) submitForm() tea.Cmd {
 			return addFormSubmitMsg{err: err}
 		}
 
-		tagsStr := strings.TrimSpace(m.inputs[tagsInput].Value())
-		var tags []string
-		if tagsStr != "" {
-			for _, tag := range strings.Split(tagsStr, ",") {
-				tag = strings.TrimSpace(tag)
-				if tag != "" {
-					tags = append(tags, tag)
-				}
-			}
-		}
+		tags := parseCommaList(m.inputs[tagsInput].Value())
 
 		// Create host configuration
 		host := config.SSHHost{
@@ -574,4 +763,76 @@ func (m *addFormModel) submitForm() tea.Cmd {
 		}
 		return addFormSubmitMsg{hostname: name, err: err}
 	}
+}
+
+func (m *addFormModel) deployAndSave() tea.Cmd {
+	target := strings.TrimSpace(m.inputs[hostnameInput].Value())
+	if target == "" {
+		m.err = "hostname/IP is required before deploy"
+		return nil
+	}
+	if !validation.ValidateHostname(target) && !validation.ValidateIP(target) {
+		m.err = "invalid hostname or IP address format"
+		return nil
+	}
+
+	port := strings.TrimSpace(m.inputs[portInput].Value())
+	if port == "" {
+		port = "22"
+	}
+	if !validation.ValidatePort(port) {
+		m.err = "port must be between 1 and 65535"
+		return nil
+	}
+
+	identity := strings.TrimSpace(m.inputs[identityInput].Value())
+	if identity == "" {
+		m.err = "choose or generate a key before deploy"
+		return nil
+	}
+
+	user := strings.TrimSpace(m.inputs[userInput].Value())
+	if user == "" {
+		user = strings.TrimSpace(m.inputs[userInput].Placeholder)
+	}
+
+	m.err = ""
+	return runAddFormDeploy(keypkg.DeployOptions{
+		Target:       target,
+		User:         user,
+		Port:         port,
+		ProxyJump:    strings.TrimSpace(m.inputs[proxyJumpInput].Value()),
+		ProxyCommand: strings.TrimSpace(m.inputs[proxyCommandInput].Value()),
+		Identity:     identity,
+	})
+}
+
+func (m *addFormModel) openKeyPicker() tea.Cmd {
+	contextLine := "For new host"
+	name := strings.TrimSpace(m.inputs[nameInput].Value())
+	if name != "" {
+		contextLine = fmt.Sprintf("For %s", name)
+	}
+
+	picker, err := NewKeyPicker("Add Host", contextLine, m.styles, m.width, m.height, m.configFile)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+
+	m.err = ""
+	m.keyPicker = picker
+	return m.keyPicker.Init()
+}
+
+func parseCommaList(value string) []string {
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			items = append(items, part)
+		}
+	}
+	return items
 }

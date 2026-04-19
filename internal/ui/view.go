@@ -35,6 +35,10 @@ func (m Model) View() string {
 		if m.portForwardForm != nil {
 			return m.portForwardForm.View()
 		}
+	case ViewKeys:
+		if m.keysView != nil {
+			return m.keysView.View()
+		}
 	case ViewHelp:
 		if m.helpForm != nil {
 			return m.helpForm.View()
@@ -114,7 +118,7 @@ func (m Model) renderListView() string {
 	// Add the help text
 	var helpText string
 	if !m.searchMode {
-		helpText = " ↑/↓: navigate • Enter: connect • p: ping all • i: info • h: help • q: quit"
+		helpText = " ↑/↓: navigate • Enter: connect • K: keys • p: ping all • i: info • h: help • q: quit"
 	} else {
 		helpText = " Type to filter • Enter: validate • Tab: switch • ESC: quit"
 	}

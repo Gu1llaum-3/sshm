@@ -73,6 +73,9 @@ func (m *helpModel) View() string {
 		lipgloss.JoinHorizontal(lipgloss.Left,
 			m.styles.FocusedLabel.Render("d  "),
 			m.styles.HelpText.Render("delete selected host")),
+		lipgloss.JoinHorizontal(lipgloss.Left,
+			m.styles.FocusedLabel.Render("K  "),
+			m.styles.HelpText.Render("open keys manager")),
 	)
 
 	rightColumn := lipgloss.JoinVertical(lipgloss.Left,

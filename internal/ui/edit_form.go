@@ -2,9 +2,11 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Gu1llaum-3/sshm/internal/config"
+	keypkg "github.com/Gu1llaum-3/sshm/internal/key"
 	"github.com/Gu1llaum-3/sshm/internal/validation"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,6 +21,10 @@ const (
 type editFormSubmitMsg struct {
 	hostname string
 	err      error
+}
+
+type editFormDeployFinishedMsg struct {
+	err error
 }
 
 type editFormCancelMsg struct{}
@@ -38,6 +44,19 @@ type editFormModel struct {
 	actualConfigFile string          // Actual config file to use (either configFile or host.SourceFile)
 	width            int
 	height           int
+	keyPicker        *keyPickerModel
+	keyCreate        *keyCreateFormModel
+}
+
+type editFormField struct {
+	index int
+	label string
+}
+
+var runEditFormDeploy = func(opts keypkg.DeployOptions) tea.Cmd {
+	return runUIDeployCommand(opts, func(err error) tea.Msg {
+		return editFormDeployFinishedMsg{err: err}
+	})
 }
 
 // NewEditForm creates a new edit form model that supports both single and multi-host editing
@@ -302,13 +321,9 @@ func (m *editFormModel) handleEditNavigation(key string) tea.Cmd {
 		// Navigate in properties area within current tab
 		currentTabProperties := m.getPropertiesForCurrentTab()
 
-		// Find current position within the tab
-		currentPos := 0
-		for i, prop := range currentTabProperties {
-			if prop == m.focused {
-				currentPos = i
-				break
-			}
+		currentPos := slices.Index(currentTabProperties, m.focused)
+		if currentPos < 0 {
+			currentPos = 0
 		}
 
 		// Handle form submission on last field of Advanced tab
@@ -389,6 +404,10 @@ func (m *editFormModel) getMinimumHeight() int {
 	return titleLines + configLines + hostSectionLines + hostLines + propertiesSectionLines + tabLines + fieldsLines + helpLines + errorLines + 1 // +1 minimal safety margin
 }
 
+func (m *editFormModel) getMinimumCompactHeight() int {
+	return 10
+}
+
 // isHeightSufficient checks if the current terminal height is sufficient
 func (m *editFormModel) isHeightSufficient() bool {
 	return m.height >= m.getMinimumHeight()
@@ -396,18 +415,86 @@ func (m *editFormModel) isHeightSufficient() bool {
 
 // renderHeightWarning renders a warning message when height is insufficient
 func (m *editFormModel) renderHeightWarning() string {
-	required := m.getMinimumHeight()
+	required := m.getMinimumCompactHeight()
 	current := m.height
 
 	warning := m.styles.ErrorText.Render("⚠️  Terminal height is too small!")
-	details := m.styles.FormField.Render(fmt.Sprintf("Current: %d lines, Required: %d lines", current, required))
-	instruction := m.styles.FormHelp.Render("Please resize your terminal window and try again.")
-	instruction2 := m.styles.FormHelp.Render("Press Ctrl+C to cancel or resize terminal window.")
+	details := m.styles.FormField.Render(fmt.Sprintf("Current: %d lines, Need at least: %d lines", current, required))
+	instruction := m.styles.FormHelp.Render("Compact mode is available, but this terminal is still too short.")
+	instruction2 := m.styles.FormHelp.Render("Resize the terminal or cancel with Esc/Ctrl+C.")
 
 	return warning + "\n\n" + details + "\n\n" + instruction + "\n" + instruction2
 }
 
 func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.keyCreate != nil {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			m.styles = NewStyles(m.width)
+			m.keyCreate.width = m.width
+			m.keyCreate.height = m.height
+			m.keyCreate.styles = m.styles
+			return m, nil
+		case keyCreateFinishedMsg:
+			if msg.err != nil {
+				m.keyCreate.err = msg.err.Error()
+				return m, nil
+			}
+			m.keyCreate = nil
+			m.inputs[3].SetValue(msg.path)
+			m.focusArea = focusAreaProperties
+			m.currentTab = 0
+			m.focused = 3
+			return m, m.updateFocus()
+		case keyCreateCancelMsg:
+			m.keyCreate = nil
+			m.focusArea = focusAreaProperties
+			m.currentTab = 0
+			m.focused = 3
+			return m, m.updateFocus()
+		}
+
+		newForm, cmd := m.keyCreate.Update(msg)
+		m.keyCreate = newForm
+		return m, cmd
+	}
+
+	if m.keyPicker != nil {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			m.styles = NewStyles(m.width)
+			m.keyPicker.width = m.width
+			m.keyPicker.height = m.height
+			m.keyPicker.styles = m.styles
+			return m, nil
+		case keyPickerSelectMsg:
+			m.keyPicker = nil
+			m.inputs[3].SetValue(msg.path)
+			m.focusArea = focusAreaProperties
+			m.currentTab = 0
+			m.focused = 3
+			return m, m.updateFocus()
+		case keyPickerCancelMsg:
+			m.keyPicker = nil
+			m.focusArea = focusAreaProperties
+			m.currentTab = 0
+			m.focused = 3
+			return m, m.updateFocus()
+		case keyPickerCreateMsg:
+			m.keyPicker = nil
+			m.keyCreate = NewKeyCreateForm(m.styles, m.width, m.height)
+			return m, m.keyCreate.Init()
+		}
+
+		newPicker, cmd := m.keyPicker.Update(msg)
+		m.keyPicker = newPicker
+		return m, cmd
+	}
+
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -443,7 +530,24 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.updateFocus()
 
-		case "tab", "shift+tab", "enter", "up", "down":
+		case "ctrl+g":
+			if m.focusArea == focusAreaProperties && m.currentTab == 0 && m.focused == 3 {
+				m.keyCreate = NewKeyCreateForm(m.styles, m.width, m.height)
+				return m, m.keyCreate.Init()
+			}
+
+		case "ctrl+o":
+			if m.focusArea == focusAreaProperties && m.currentTab == 0 && m.focused == 3 {
+				return m, m.openKeyPicker()
+			}
+
+		case "enter":
+			if m.focusArea == focusAreaProperties && m.currentTab == 0 && m.focused == 3 {
+				return m, m.openKeyPicker()
+			}
+			return m, m.handleEditNavigation(msg.String())
+
+		case "tab", "shift+tab", "up", "down":
 			return m, m.handleEditNavigation(msg.String())
 
 		case "ctrl+a":
@@ -455,6 +559,7 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focusArea == focusAreaHosts && len(m.hostInputs) > 1 {
 				return m, m.deleteHostInput()
 			}
+			return m, m.deployAndSave()
 		}
 
 	case editFormSubmitMsg:
@@ -466,6 +571,13 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// In standalone mode, the wrapper will quit
 		}
 		return m, nil
+	case editFormDeployFinishedMsg:
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		return m, m.submitEditForm()
 	}
 
 	// Update host inputs
@@ -486,9 +598,19 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *editFormModel) View() string {
-	// Check if terminal height is sufficient
-	if !m.isHeightSufficient() {
+	if m.keyCreate != nil {
+		return m.keyCreate.View()
+	}
+
+	if m.keyPicker != nil {
+		return m.keyPicker.View()
+	}
+
+	if m.height < m.getMinimumCompactHeight() {
 		return m.renderHeightWarning()
+	}
+	if !m.isHeightSufficient() {
+		return m.renderCompactView()
 	}
 
 	var b strings.Builder
@@ -548,10 +670,16 @@ func (m *editFormModel) View() string {
 
 	// Show different help based on number of hosts
 	if len(m.hostInputs) > 1 {
-		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+J/K: switch tabs • Ctrl+A: add host • Ctrl+D: delete host"))
+		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓: navigate • Identity File: Enter/Ctrl+O choose key • Ctrl+G generate"))
+		b.WriteString("\n")
+		b.WriteString(m.styles.FormHelp.Render("Ctrl+J/K: switch tabs • Ctrl+A: add host • Ctrl+D: deploy+save"))
+		b.WriteString("\n")
+		b.WriteString(m.styles.FormHelp.Render("In Host Names: Ctrl+D deletes the focused alias"))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓/Enter: navigate • Ctrl+J/K: switch tabs • Ctrl+A: add host"))
+		b.WriteString(m.styles.FormHelp.Render("Tab/↑↓: navigate • Identity File: Enter/Ctrl+O choose key • Ctrl+G generate"))
+		b.WriteString("\n")
+		b.WriteString(m.styles.FormHelp.Render("Ctrl+J/K: switch tabs • Ctrl+A: add host • Ctrl+D: deploy selected key then save"))
 		b.WriteString("\n")
 	}
 	b.WriteString(m.styles.FormHelp.Render("Ctrl+S: save • Ctrl+C/Esc: cancel • * Required fields"))
@@ -578,18 +706,7 @@ func (m *editFormModel) renderEditTabs() string {
 func (m *editFormModel) renderEditGeneralTab() string {
 	var b strings.Builder
 
-	fields := []struct {
-		index int
-		label string
-	}{
-		{0, "Hostname/IP *"},
-		{1, "User"},
-		{2, "Port"},
-		{3, "Identity File"},
-		{4, "Proxy Jump"},
-		{5, "Proxy Command"},
-		{7, "Tags (comma-separated)"},
-	}
+	fields := m.generalPropertyFields()
 
 	for _, field := range fields {
 		fieldStyle := m.styles.FormField
@@ -604,6 +721,14 @@ func (m *editFormModel) renderEditGeneralTab() string {
 			b.WriteString(m.styles.FormHelp.Render(`  tip: use "hidden" to hide this host from the list`))
 			b.WriteString("\n")
 		}
+		if field.index == 3 && m.focusArea == focusAreaProperties && m.focused == 3 {
+			b.WriteString(m.styles.FormHelp.Render("  tip: Enter/Ctrl+O choose a key • Ctrl+G generates one • keep typing for a custom path"))
+			b.WriteString("\n")
+		}
+		if field.index == 0 && m.focusArea == focusAreaProperties && m.focused == 0 {
+			b.WriteString(m.styles.FormHelp.Render("  tip: Ctrl+D deploys the selected key to this host and saves on success"))
+			b.WriteString("\n")
+		}
 		b.WriteString("\n")
 	}
 
@@ -614,14 +739,7 @@ func (m *editFormModel) renderEditGeneralTab() string {
 func (m *editFormModel) renderEditAdvancedTab() string {
 	var b strings.Builder
 
-	fields := []struct {
-		index int
-		label string
-	}{
-		{6, "SSH Options"},
-		{8, "Remote Command"},
-		{9, "Request TTY"},
-	}
+	fields := m.advancedPropertyFields()
 
 	for _, field := range fields {
 		fieldStyle := m.styles.FormField
@@ -635,6 +753,106 @@ func (m *editFormModel) renderEditAdvancedTab() string {
 	}
 
 	return b.String()
+}
+
+func (m *editFormModel) renderCompactView() string {
+	var b strings.Builder
+
+	b.WriteString(m.styles.Header.Render("Edit SSH Host"))
+	b.WriteString("\n")
+	b.WriteString(m.styles.FormHelp.Render("Compact mode"))
+	b.WriteString("\n\n")
+
+	if m.host != nil && m.host.SourceFile != "" {
+		b.WriteString(m.styles.FormHelp.Render("Config: " + formatConfigFile(m.host.SourceFile)))
+		b.WriteString("\n\n")
+	}
+
+	if m.focusArea == focusAreaHosts {
+		if len(m.hostInputs) == 0 {
+			b.WriteString(m.styles.ErrorText.Render("No host names available."))
+		} else {
+			b.WriteString(m.styles.FormHelp.Render(fmt.Sprintf("Host name %d/%d", m.focused+1, len(m.hostInputs))))
+			b.WriteString("\n")
+			b.WriteString(m.styles.FocusedLabel.Render(fmt.Sprintf("Host Name %d *", m.focused+1)))
+			b.WriteString("\n")
+			b.WriteString(m.hostInputs[m.focused].View())
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString(m.renderEditTabs())
+		b.WriteString("\n\n")
+		fields := m.fieldsForCurrentPropertyTab()
+		currentField, currentPos := m.currentPropertyField(fields)
+		b.WriteString(m.styles.FormHelp.Render(fmt.Sprintf("Property %d/%d", currentPos+1, len(fields))))
+		b.WriteString("\n")
+		b.WriteString(m.styles.FocusedLabel.Render(currentField.label))
+		b.WriteString("\n")
+		b.WriteString(m.inputs[currentField.index].View())
+		b.WriteString("\n")
+		if currentField.index == 7 {
+			b.WriteString(m.styles.FormHelp.Render(`tip: use "hidden" to hide this host from the list`))
+			b.WriteString("\n")
+		}
+		if currentField.index == 3 {
+			b.WriteString(m.styles.FormHelp.Render("tip: Enter/Ctrl+O choose • Ctrl+G generate • type manually for a custom path"))
+			b.WriteString("\n")
+		}
+		if currentField.index == 0 {
+			b.WriteString(m.styles.FormHelp.Render("tip: Ctrl+D deploys the selected key and saves only if deploy succeeds"))
+			b.WriteString("\n")
+		}
+	}
+
+	if m.err != "" {
+		b.WriteString("\n")
+		b.WriteString(m.styles.ErrorText.Render("Error: " + m.err))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	if len(m.hostInputs) > 1 && m.focusArea == focusAreaHosts {
+		b.WriteString(m.styles.FormHelp.Render("↑/↓ or Tab move • Ctrl+A add host • Ctrl+D delete alias • Ctrl+S save • Esc cancel"))
+	} else {
+		b.WriteString(m.styles.FormHelp.Render("↑/↓ or Tab move • Ctrl+J/K tabs • Ctrl+A add host • Ctrl+D deploy+save • Ctrl+S save • Esc cancel"))
+	}
+	return b.String()
+}
+
+func (m *editFormModel) generalPropertyFields() []editFormField {
+	return []editFormField{
+		{0, "Hostname/IP *"},
+		{1, "User"},
+		{2, "Port"},
+		{3, "Identity File"},
+		{4, "Proxy Jump"},
+		{5, "Proxy Command"},
+		{7, "Tags (comma-separated)"},
+	}
+}
+
+func (m *editFormModel) advancedPropertyFields() []editFormField {
+	return []editFormField{
+		{6, "SSH Options"},
+		{8, "Remote Command"},
+		{9, "Request TTY"},
+	}
+}
+
+func (m *editFormModel) fieldsForCurrentPropertyTab() []editFormField {
+	if m.currentTab == 1 {
+		return m.advancedPropertyFields()
+	}
+	return m.generalPropertyFields()
+}
+
+func (m *editFormModel) currentPropertyField(fields []editFormField) (editFormField, int) {
+	for i, field := range fields {
+		if field.index == m.focused {
+			return field, i
+		}
+	}
+	return fields[0], 0
 }
 
 // Standalone wrapper for edit form
@@ -718,17 +936,7 @@ func (m *editFormModel) submitEditForm() tea.Cmd {
 			}
 		}
 
-		// Parse tags
-		tagsStr := strings.TrimSpace(m.inputs[7].Value()) // tagsInput
-		var tags []string
-		if tagsStr != "" {
-			for _, tag := range strings.Split(tagsStr, ",") {
-				tag = strings.TrimSpace(tag)
-				if tag != "" {
-					tags = append(tags, tag)
-				}
-			}
-		}
+		tags := parseCommaList(m.inputs[7].Value()) // tagsInput
 
 		// Create the common host configuration
 		commonHost := config.SSHHost{
@@ -760,4 +968,76 @@ func (m *editFormModel) submitEditForm() tea.Cmd {
 
 		return editFormSubmitMsg{hostname: hostNames[0], err: err}
 	}
+}
+
+func (m *editFormModel) deployAndSave() tea.Cmd {
+	hostname := strings.TrimSpace(m.inputs[0].Value())
+	if hostname == "" {
+		m.err = "hostname/IP is required before deploy"
+		return nil
+	}
+	if !validation.ValidateHostname(hostname) && !validation.ValidateIP(hostname) {
+		m.err = "invalid hostname or IP address format"
+		return nil
+	}
+
+	port := strings.TrimSpace(m.inputs[2].Value())
+	if port == "" {
+		port = "22"
+	}
+	if !validation.ValidatePort(port) {
+		m.err = "port must be between 1 and 65535"
+		return nil
+	}
+
+	identity := strings.TrimSpace(m.inputs[3].Value())
+	if identity == "" {
+		m.err = "choose or generate a key before deploy"
+		return nil
+	}
+
+	user := strings.TrimSpace(m.inputs[1].Value())
+	if user == "" {
+		user = strings.TrimSpace(m.inputs[1].Placeholder)
+	}
+
+	m.err = ""
+	return runEditFormDeploy(keypkg.DeployOptions{
+		Target:       hostname,
+		User:         user,
+		Port:         port,
+		ProxyJump:    strings.TrimSpace(m.inputs[4].Value()),
+		ProxyCommand: strings.TrimSpace(m.inputs[5].Value()),
+		Identity:     identity,
+	})
+}
+
+func (m *editFormModel) openKeyPicker() tea.Cmd {
+	contextLine := "Choose key"
+	if len(m.hostInputs) > 0 {
+		var names []string
+		for _, input := range m.hostInputs {
+			name := strings.TrimSpace(input.Value())
+			if name != "" {
+				names = append(names, name)
+			}
+		}
+		if len(names) > 0 {
+			if len(names) == 1 {
+				contextLine = fmt.Sprintf("For %s", names[0])
+			} else {
+				contextLine = fmt.Sprintf("For %s (+%d)", names[0], len(names)-1)
+			}
+		}
+	}
+
+	picker, err := NewKeyPicker("Edit Host", contextLine, m.styles, m.width, m.height, m.configFile)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+
+	m.err = ""
+	m.keyPicker = picker
+	return m.keyPicker.Init()
 }

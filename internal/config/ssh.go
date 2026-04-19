@@ -49,14 +49,7 @@ func GetDefaultSSHConfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	switch runtime.GOOS {
-	case "windows":
-		return filepath.Join(homeDir, ".ssh", "config"), nil
-	default:
-		// Linux, macOS, etc.
-		return filepath.Join(homeDir, ".ssh", "config"), nil
-	}
+	return filepath.Join(homeDir, ".ssh", "config"), nil
 }
 
 // GetSSHMConfigDir returns the SSHM config directory
@@ -277,19 +270,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			hosts = append(hosts, includeHosts...)
 		case "host":
 			// New host, save previous one if it exists
-			if currentHost != nil {
-				hosts = append(hosts, *currentHost)
-
-				// Handle aliases: create duplicate hosts for each alias
-				if len(currentHost.aliasNames) > 0 {
-					for _, aliasName := range currentHost.aliasNames {
-						aliasHost := *currentHost // Copy the host
-						aliasHost.Name = aliasName
-						aliasHost.aliasNames = nil // Clear temporary field
-						hosts = append(hosts, aliasHost)
-					}
-				}
-			}
+			hosts = appendParsedHost(hosts, currentHost)
 
 			// Parse multiple host names from the Host line
 			hostNames := strings.Fields(value)
@@ -328,6 +309,10 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 
 			// Clear pending tags for next host
+			pendingTags = nil
+		case "match":
+			hosts = appendParsedHost(hosts, currentHost)
+			currentHost = nil
 			pendingTags = nil
 		case "hostname":
 			if currentHost != nil {
@@ -375,23 +360,24 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 	}
 
 	// Add the last host if it exists
-	if currentHost != nil {
-		hosts = append(hosts, *currentHost)
-
-		// Handle aliases: create duplicate hosts for each alias
-		if len(currentHost.aliasNames) > 0 {
-			for _, aliasName := range currentHost.aliasNames {
-				aliasHost := *currentHost // Copy the host
-				aliasHost.Name = aliasName
-				aliasHost.aliasNames = nil // Clear temporary field
-				hosts = append(hosts, aliasHost)
-			}
-		}
-		// Clear the temporary field from the original
-		currentHost.aliasNames = nil
-	}
+	hosts = appendParsedHost(hosts, currentHost)
 
 	return hosts, scanner.Err()
+}
+
+func appendParsedHost(hosts []SSHHost, currentHost *SSHHost) []SSHHost {
+	if currentHost == nil {
+		return hosts
+	}
+
+	hosts = append(hosts, *currentHost)
+	for _, aliasName := range currentHost.aliasNames {
+		aliasHost := *currentHost
+		aliasHost.Name = aliasName
+		aliasHost.aliasNames = nil
+		hosts = append(hosts, aliasHost)
+	}
+	return hosts
 }
 
 // processIncludeDirective processes an Include directive and returns hosts from included files
@@ -681,11 +667,10 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 // Input: "-o Compression=yes -o ServerAliveInterval=60" or "ForwardX11 true" or "Compression yes"
 // Output: "Compression yes\nServerAliveInterval 60"
 func ParseSSHOptionsFromCommand(options string) string {
+	options = strings.TrimSpace(options)
 	if options == "" {
 		return ""
 	}
-
-	options = strings.TrimSpace(options)
 
 	// If it doesn't contain -o, assume it's already in config format
 	if !strings.Contains(options, "-o") {
@@ -727,14 +712,14 @@ func ParseSSHOptionsFromCommand(options string) string {
 // Input: "Compression yes\nServerAliveInterval 60"
 // Output: "-o Compression=yes -o ServerAliveInterval=60"
 func FormatSSHOptionsForCommand(options string) string {
+	options = strings.TrimSpace(options)
 	if options == "" {
 		return ""
 	}
 
 	// If already in command format (starts with -o), return as is
-	trimmed := strings.TrimSpace(options)
-	if strings.HasPrefix(trimmed, "-o ") {
-		return trimmed
+	if strings.HasPrefix(options, "-o ") {
+		return options
 	}
 
 	var result []string
@@ -826,6 +811,31 @@ func GetSSHHost(hostName string) (*SSHHost, error) {
 	return nil, fmt.Errorf("host '%s' not found", hostName)
 }
 
+// LookupSSHHostsByName returns all concrete matches for a host name from the default SSH config graph.
+func LookupSSHHostsByName(hostName string) ([]SSHHost, error) {
+	configPath, err := GetDefaultSSHConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	return LookupSSHHostsByNameFromFile(hostName, configPath)
+}
+
+// LookupSSHHostsByNameFromFile returns all concrete matches for a host name from a specific base config graph.
+func LookupSSHHostsByNameFromFile(hostName string, configPath string) ([]SSHHost, error) {
+	hosts, err := ParseSSHConfigFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make([]SSHHost, 0, 1)
+	for _, host := range hosts {
+		if host.Name == hostName {
+			matches = append(matches, host)
+		}
+	}
+	return matches, nil
+}
+
 // GetSSHHostFromFile retrieves a specific host configuration by name from a specific config file
 func GetSSHHostFromFile(hostName string, configPath string) (*SSHHost, error) {
 	hosts, err := ParseSSHConfigFile(configPath)
@@ -839,6 +849,32 @@ func GetSSHHostFromFile(hostName string, configPath string) (*SSHHost, error) {
 		}
 	}
 	return nil, fmt.Errorf("host '%s' not found", hostName)
+}
+
+// GetUniqueSSHHost returns one uniquely resolved host from the default SSH config graph.
+func GetUniqueSSHHost(hostName string) (*SSHHost, error) {
+	configPath, err := GetDefaultSSHConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	return GetUniqueSSHHostFromFile(hostName, configPath)
+}
+
+// GetUniqueSSHHostFromFile returns one uniquely resolved host from a specific base config graph.
+// It fails closed when the name resolves to zero or multiple concrete matches.
+func GetUniqueSSHHostFromFile(hostName string, configPath string) (*SSHHost, error) {
+	matches, err := LookupSSHHostsByNameFromFile(hostName, configPath)
+	if err != nil {
+		return nil, err
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("host '%s' not found", hostName)
+	case 1:
+		return &matches[0], nil
+	default:
+		return nil, fmt.Errorf("host '%s' is ambiguous: %d matches found", hostName, len(matches))
+	}
 }
 
 // QuickHostExists performs a fast check if a host exists without full parsing
