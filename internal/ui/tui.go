@@ -32,6 +32,10 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 		appConfig.CheckForUpdates = &f
 	}
 
+	if appConfig.FocusSearchOnStart {
+		searchMode = true
+	}
+
 	// Initialize the history manager
 	historyManager, err := history.NewHistoryManager()
 	if err != nil {
