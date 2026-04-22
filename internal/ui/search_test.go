@@ -342,3 +342,40 @@ func TestSourceFileFilterKeybindings(t *testing.T) {
 		t.Fatalf("after C, expected 3 hosts, got %d", len(m.filteredHosts))
 	}
 }
+
+func TestFilterComposesWithSearchAndHidden(t *testing.T) {
+	hosts := []config.SSHHost{
+		{Name: "web-main", SourceFile: "/x/main"},
+		{Name: "db-main", SourceFile: "/x/main"},
+		{Name: "web-work", SourceFile: "/x/work.conf"},
+		{Name: "db-work", SourceFile: "/x/work.conf"},
+		{Name: "secret-work", SourceFile: "/x/work.conf", Tags: []string{"hidden"}},
+	}
+	m := Model{
+		allHosts: hosts, searchInput: textinput.New(), table: table.New(),
+		ready: true, width: 80, height: 24, styles: NewStyles(80),
+		selectedSourceFile: "/x/work.conf",
+	}
+	m.updateTableColumns()
+	m.rebuildFilteredHosts()
+
+	// File filter alone: hidden excluded by default, 2 remaining.
+	if len(m.filteredHosts) != 2 {
+		t.Fatalf("file filter alone: expected 2 hosts, got %d", len(m.filteredHosts))
+	}
+
+	// File filter + search "web" -> 1 host.
+	m.searchInput.SetValue("web")
+	m.rebuildFilteredHosts()
+	if len(m.filteredHosts) != 1 || m.filteredHosts[0].Name != "web-work" {
+		t.Fatalf("file+search: got %+v", m.filteredHosts)
+	}
+
+	// Toggle hidden ON, clear search -> 3 hosts from work.conf.
+	m.searchInput.SetValue("")
+	m.showHidden = true
+	m.rebuildFilteredHosts()
+	if len(m.filteredHosts) != 3 {
+		t.Fatalf("file+hidden: expected 3 hosts, got %d", len(m.filteredHosts))
+	}
+}
