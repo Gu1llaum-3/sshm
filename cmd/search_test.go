@@ -113,13 +113,13 @@ func TestSearchByTag_MatchesInheritedTags(t *testing.T) {
 		{Name: "h2", Tags: []string{"prod"}},
 		{Name: "h3", Tags: []string{"dev"}, InheritedTags: []string{"staging"}},
 	}
-	got := filterHostsByTag(hosts, "prod")
+	got := filterHosts(hosts, "prod", true, false)
 	if len(got) != 2 {
-		t.Errorf("filterHostsByTag('prod') returned %d hosts, want 2", len(got))
+		t.Errorf("filterHosts(tagsOnly, 'prod') returned %d hosts, want 2", len(got))
 	}
-	gotStaging := filterHostsByTag(hosts, "staging")
+	gotStaging := filterHosts(hosts, "staging", true, false)
 	if len(gotStaging) != 1 || gotStaging[0].Name != "h3" {
-		t.Errorf("filterHostsByTag('staging') = %v, want [h3]", gotStaging)
+		t.Errorf("filterHosts(tagsOnly, 'staging') = %v, want [h3]", gotStaging)
 	}
 }
 
