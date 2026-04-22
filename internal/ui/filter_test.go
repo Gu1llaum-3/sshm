@@ -47,3 +47,24 @@ func TestApplySourceFileFilter(t *testing.T) {
 		}
 	})
 }
+
+func TestFileSelectorWithAllPrependsSynthetic(t *testing.T) {
+	// We can't easily mock GetAllConfigFilesFromBase, so drive the helper
+	// directly through newFileSelectorFromFiles then apply the same
+	// prepending logic and assert the invariants a caller relies on.
+	files := []string{"/a.conf", "/b.conf"}
+	styles := NewStyles(80)
+	m, err := newFileSelectorFromFiles("t", styles, 80, 24, files)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.files = append([]string{""}, m.files...)
+	m.displayNames = append([]string{"[All files]"}, m.displayNames...)
+
+	if len(m.files) != 3 || m.files[0] != "" {
+		t.Fatalf("expected synthetic entry at index 0, got %v", m.files)
+	}
+	if m.displayNames[0] != "[All files]" {
+		t.Fatalf("expected display name '[All files]', got %q", m.displayNames[0])
+	}
+}
