@@ -304,3 +304,41 @@ func TestSearchByUser(t *testing.T) {
 		t.Errorf("Expected 'server1' to match user search, got '%s'", m.filteredHosts[0].Name)
 	}
 }
+
+func TestSourceFileFilterKeybindings(t *testing.T) {
+	hosts := []config.SSHHost{
+		{Name: "a", SourceFile: "/x/main"},
+		{Name: "b", SourceFile: "/x/work.conf"},
+		{Name: "c", SourceFile: "/x/work.conf"},
+	}
+	m := Model{
+		allHosts: hosts, hosts: hosts, filteredHosts: hosts,
+		searchInput: textinput.New(), table: table.New(),
+		ready: true, width: 80, height: 24, styles: NewStyles(80),
+	}
+	m.updateTableColumns()
+	m.updateTableRows()
+
+	// Simulate selecting a file via the selector message path.
+	m.fileSelectorPurpose = purposeFilterHosts
+	newModel, _ := m.Update(fileSelectorMsg{selectedFile: "/x/work.conf"})
+	m = newModel.(Model)
+
+	if m.selectedSourceFile != "/x/work.conf" {
+		t.Fatalf("selectedSourceFile = %q, want %q", m.selectedSourceFile, "/x/work.conf")
+	}
+	if len(m.filteredHosts) != 2 {
+		t.Fatalf("expected 2 filtered hosts, got %d", len(m.filteredHosts))
+	}
+
+	// Press "C" to clear.
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = newModel.(Model)
+
+	if m.selectedSourceFile != "" {
+		t.Fatalf("after C, selectedSourceFile = %q, want empty", m.selectedSourceFile)
+	}
+	if len(m.filteredHosts) != 3 {
+		t.Fatalf("after C, expected 3 hosts, got %d", len(m.filteredHosts))
+	}
+}

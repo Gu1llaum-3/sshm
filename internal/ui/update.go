@@ -659,6 +659,34 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, textinput.Blink
 		}
+	case "c":
+		if !m.searchMode && !m.deleteMode {
+			fileSelectorForm, err := NewFileSelectorWithAll(
+				"Filter hosts by config file:",
+				m.styles, m.width, m.height, m.configFile, "[All files]",
+			)
+			if err != nil {
+				m.errorMessage = err.Error()
+				m.showingError = true
+				return m, func() tea.Msg {
+					time.Sleep(3 * time.Second)
+					return errorMsg("clear")
+				}
+			}
+			m.fileSelectorForm = fileSelectorForm
+			m.fileSelectorPurpose = purposeFilterHosts
+			m.viewMode = ViewFileSelector
+			return m, textinput.Blink
+		}
+	case "C":
+		if !m.searchMode && !m.deleteMode {
+			if m.selectedSourceFile != "" {
+				m.selectedSourceFile = ""
+				m.rebuildFilteredHosts()
+				m.updateTableRows()
+			}
+			return m, nil
+		}
 	case "d":
 		if !m.searchMode && !m.deleteMode {
 			// Delete the selected host
