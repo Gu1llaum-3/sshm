@@ -290,13 +290,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fileSelectorMsg:
 		if msg.cancelled {
-			// Cancel: return to list view
+			// Cancel: return to list view regardless of purpose.
 			m.viewMode = ViewList
 			m.fileSelectorForm = nil
 			m.table.Focus()
 			return m, nil
-		} else {
-			// File selected: proceed to add form with selected file
+		}
+		switch m.fileSelectorPurpose {
+		case purposeFilterHosts:
+			// msg.selectedFile == "" means "clear filter" (the synthetic entry).
+			m.selectedSourceFile = msg.selectedFile
+			m.rebuildFilteredHosts()
+			m.updateTableRows()
+			// Clamp cursor to the (possibly smaller) result set.
+			if c := m.table.Cursor(); c >= len(m.filteredHosts) && len(m.filteredHosts) > 0 {
+				m.table.SetCursor(len(m.filteredHosts) - 1)
+			}
+			m.viewMode = ViewList
+			m.fileSelectorForm = nil
+			m.table.Focus()
+			return m, nil
+		default: // purposeAddHost
 			m.addForm = NewAddForm("", m.styles, m.width, m.height, msg.selectedFile)
 			m.viewMode = ViewAdd
 			m.fileSelectorForm = nil
@@ -638,6 +652,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.addForm = NewAddForm("", m.styles, m.width, m.height, m.configFile)
 					m.viewMode = ViewAdd
 				} else {
+					m.fileSelectorPurpose = purposeAddHost
 					m.fileSelectorForm = fileSelectorForm
 					m.viewMode = ViewFileSelector
 				}
