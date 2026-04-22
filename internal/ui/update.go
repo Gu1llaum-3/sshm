@@ -188,14 +188,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.viewMode = ViewList
@@ -233,14 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.viewMode = ViewList
@@ -279,14 +265,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.viewMode = ViewList
@@ -539,14 +518,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.deleteMode = false
@@ -711,14 +683,8 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "H":
 		if !m.searchMode && !m.deleteMode {
-			// Toggle visibility of hidden hosts
 			m.showHidden = !m.showHidden
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(m.allHosts))
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -726,12 +692,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.searchMode && !m.deleteMode {
 			// Cycle through sort modes (only 2 modes now)
 			m.sortMode = (m.sortMode + 1) % 2
-			// Re-apply the current filter with the new sort mode
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -739,12 +700,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.searchMode && !m.deleteMode {
 			// Switch to sort by recent (last used)
 			m.sortMode = SortByLastUsed
-			// Re-apply the current filter with the new sort mode
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -752,12 +708,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.searchMode && !m.deleteMode {
 			// Switch to sort by name
 			m.sortMode = SortByName
-			// Re-apply the current filter with the new sort mode
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -770,11 +721,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Update filtered hosts only if the search value has changed
 		if m.searchInput.Value() != oldValue {
 			currentCursor := m.table.Cursor()
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			// If the current cursor position is beyond the filtered results, reset to 0
 			if currentCursor >= len(m.filteredHosts) && len(m.filteredHosts) > 0 {

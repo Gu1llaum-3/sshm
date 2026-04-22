@@ -20,6 +20,7 @@ func createTestModel() Model {
 	}
 
 	m := Model{
+		allHosts:      hosts,
 		hosts:         hosts,
 		filteredHosts: hosts,
 		searchInput:   textinput.New(),

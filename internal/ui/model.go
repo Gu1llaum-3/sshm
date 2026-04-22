@@ -153,3 +153,19 @@ func (m *Model) updateTableStyles() {
 
 	m.table.SetStyles(s)
 }
+
+// rebuildFilteredHosts recomputes m.hosts and m.filteredHosts from m.allHosts
+// by chaining every active filter in a deterministic order:
+// visibility (hidden tag) → source file → search text → sort.
+// Callers that mutate m.allHosts, m.selectedSourceFile, m.showHidden,
+// m.sortMode, or m.searchInput should call this and then updateTableRows().
+func (m *Model) rebuildFilteredHosts() {
+	visible := m.applyVisibilityFilter(m.allHosts)
+	byFile := applySourceFileFilter(visible, m.selectedSourceFile)
+	m.hosts = m.sortHosts(byFile)
+	if m.searchInput.Value() != "" {
+		m.filteredHosts = m.filterHosts(m.searchInput.Value())
+	} else {
+		m.filteredHosts = m.hosts
+	}
+}
