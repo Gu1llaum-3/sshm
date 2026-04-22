@@ -127,7 +127,11 @@ func (m Model) renderListView() string {
 	// Add the help text
 	var helpText string
 	if !m.searchMode {
-		helpText = " ↑/↓: navigate • Enter: connect • p: ping all • i: info • c: filter by file • h: help • q: quit"
+		if m.selectedSourceFile != "" {
+			helpText = " ↑/↓: navigate • Enter: connect • p: ping all • i: info • c: filter by file • C: clear filter • h: help • q: quit"
+		} else {
+			helpText = " ↑/↓: navigate • Enter: connect • p: ping all • i: info • c: filter by file • h: help • q: quit"
+		}
 	} else {
 		helpText = " Type to filter • Enter: validate • Tab: switch • ESC: quit"
 	}
