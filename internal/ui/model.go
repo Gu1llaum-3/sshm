@@ -44,6 +44,16 @@ const (
 	ViewFileSelector
 )
 
+// fileSelectorPurpose distinguishes the reason the file selector is open.
+// The same view is used for picking a file to add a host to and for
+// filtering the list by source file.
+type fileSelectorPurpose int
+
+const (
+	purposeAddHost fileSelectorPurpose = iota
+	purposeFilterHosts
+)
+
 // PortForwardType defines the type of port forwarding
 type PortForwardType int
 
@@ -81,6 +91,8 @@ type Model struct {
 	pingManager    *connectivity.PingManager
 	sortMode       SortMode
 	configFile     string // Path to the SSH config file
+	selectedSourceFile  string              // "" = all files, otherwise absolute path
+	fileSelectorPurpose fileSelectorPurpose // interpretation of fileSelectorForm result
 
 	// Application configuration
 	appConfig *config.AppConfig
