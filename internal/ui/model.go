@@ -164,6 +164,14 @@ func (m *Model) updateTableStyles() {
 func (m *Model) rebuildFilteredHosts() {
 	visible := m.applyVisibilityFilter(m.allHosts)
 	byFile := applySourceFileFilter(visible, m.selectedSourceFile)
+	if m.selectedSourceFile != "" && len(byFile) == 0 && len(visible) > 0 {
+		// The file the user was filtering by no longer has any visible
+		// hosts (likely because the last one was deleted or moved).
+		// Silently clear the filter so the user is not stuck on an
+		// empty view they cannot recover from without knowing about C.
+		m.selectedSourceFile = ""
+		byFile = visible
+	}
 	m.hosts = m.sortHosts(byFile)
 	if m.searchInput.Value() != "" {
 		m.filteredHosts = m.filterHosts(m.searchInput.Value())

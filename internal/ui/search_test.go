@@ -379,3 +379,24 @@ func TestFilterComposesWithSearchAndHidden(t *testing.T) {
 		t.Fatalf("file+hidden: expected 3 hosts, got %d", len(m.filteredHosts))
 	}
 }
+
+func TestFilterAutoResetsWhenFileBecomesEmpty(t *testing.T) {
+	hosts := []config.SSHHost{
+		{Name: "a", SourceFile: "/x/main"},
+		{Name: "b", SourceFile: "/x/main"},
+	}
+	m := Model{
+		allHosts: hosts, searchInput: textinput.New(), table: table.New(),
+		ready: true, width: 80, height: 24, styles: NewStyles(80),
+		selectedSourceFile: "/x/gone.conf",
+	}
+	m.updateTableColumns()
+	m.rebuildFilteredHosts()
+
+	if m.selectedSourceFile != "" {
+		t.Fatalf("expected filter auto-reset, still set to %q", m.selectedSourceFile)
+	}
+	if len(m.filteredHosts) != 2 {
+		t.Fatalf("expected 2 hosts visible after reset, got %d", len(m.filteredHosts))
+	}
+}
