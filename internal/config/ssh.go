@@ -36,11 +36,37 @@ type SSHHost struct {
 	RemoteCommand string // Command to execute after SSH connection
 	RequestTTY    string // Request TTY (yes, no, force, auto)
 	Tags          []string
-	SourceFile    string // Path to the config file where this host is defined
-	LineNumber    int    // Line number in the source file where this host block starts (1-indexed)
+	InheritedTags []string // Tags inherited from `# FileTags:` in the source file. Populated by parser, never edited.
+	SourceFile    string   // Path to the config file where this host is defined
+	LineNumber    int      // Line number in the source file where this host block starts (1-indexed)
 
 	// Temporary field to handle multiple aliases during parsing
 	aliasNames []string `json:"-"` // Do not serialize this field
+}
+
+// AllTags returns the deduplicated union of InheritedTags and Tags,
+// inherited first, then own tags. Returns nil if both are empty.
+func (h *SSHHost) AllTags() []string {
+	if len(h.InheritedTags) == 0 && len(h.Tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(h.InheritedTags)+len(h.Tags))
+	out := make([]string, 0, len(h.InheritedTags)+len(h.Tags))
+	for _, t := range h.InheritedTags {
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	for _, t := range h.Tags {
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }
 
 // GetDefaultSSHConfigPath returns the default SSH config path for the current platform

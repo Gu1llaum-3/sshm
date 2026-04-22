@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -1784,5 +1785,42 @@ Host "quoted1" "quoted2"
 		if host.Hostname != "qa-test-vm.example.com" {
 			t.Errorf("Host qa-test-vm has wrong hostname: %q", host.Hostname)
 		}
+	}
+}
+
+func TestAllTags_UnionAndDedup(t *testing.T) {
+	h := SSHHost{
+		Tags:          []string{"db", "prod"},
+		InheritedTags: []string{"prod", "eu-west"},
+	}
+	got := h.AllTags()
+	want := []string{"prod", "eu-west", "db"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AllTags() = %v, want %v", got, want)
+	}
+}
+
+func TestAllTags_EmptySlicesSafe(t *testing.T) {
+	h := SSHHost{}
+	if got := h.AllTags(); len(got) != 0 {
+		t.Errorf("AllTags() on empty host = %v, want empty", got)
+	}
+}
+
+func TestAllTags_OnlyInherited(t *testing.T) {
+	h := SSHHost{InheritedTags: []string{"a", "b"}}
+	got := h.AllTags()
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AllTags() = %v, want %v", got, want)
+	}
+}
+
+func TestAllTags_OnlyOwn(t *testing.T) {
+	h := SSHHost{Tags: []string{"a", "b"}}
+	got := h.AllTags()
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AllTags() = %v, want %v", got, want)
 	}
 }
