@@ -1962,3 +1962,82 @@ func TestParse_FileTags_NotCascadedViaInclude(t *testing.T) {
 		t.Errorf("parent-h InheritedTags = %v, want [parent-only]", got)
 	}
 }
+
+func TestRoundTrip_FileTagsPreserved_OnAddEditDelete(t *testing.T) {
+	initial := `# FileTags: prod, eu
+
+# Tags: db
+Host h1
+    HostName 10.0.0.1
+    User admin
+
+Host h2
+    HostName 10.0.0.2
+    User admin
+`
+	p := writeTempConfig(t, initial)
+
+	// Edit h1
+	newH1 := SSHHost{Name: "h1", Hostname: "10.0.0.99", User: "admin", Port: "22", Tags: []string{"db"}}
+	if err := UpdateSSHHostInFile("h1", newH1, p); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	assertFileTagsHeader(t, p, "# FileTags: prod, eu")
+	assertNoFileTagsBleedIntoHostTags(t, p)
+
+	// Add h3
+	h3 := SSHHost{Name: "h3", Hostname: "10.0.0.3", User: "admin", Port: "22"}
+	if err := AddSSHHostToFile(h3, p); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	assertFileTagsHeader(t, p, "# FileTags: prod, eu")
+
+	// Delete h2
+	if err := DeleteSSHHostFromFile("h2", p); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	assertFileTagsHeader(t, p, "# FileTags: prod, eu")
+
+	// Reparse — InheritedTags must remain set on all hosts; none of them should have prod/eu in their own Tags slice.
+	hosts, err := ParseSSHConfigFile(p)
+	if err != nil {
+		t.Fatalf("parse after round-trip: %v", err)
+	}
+	for _, h := range hosts {
+		if !reflect.DeepEqual(h.InheritedTags, []string{"prod", "eu"}) {
+			t.Errorf("host %s InheritedTags = %v, want [prod eu]", h.Name, h.InheritedTags)
+		}
+		for _, tag := range h.Tags {
+			if tag == "prod" || tag == "eu" {
+				t.Errorf("host %s has inherited tag %q duplicated in own Tags", h.Name, tag)
+			}
+		}
+	}
+}
+
+func assertFileTagsHeader(t *testing.T, path, wantLine string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(b), wantLine+"\n") {
+		t.Errorf("expected %q in file, got:\n%s", wantLine, string(b))
+	}
+}
+
+func assertNoFileTagsBleedIntoHostTags(t *testing.T, path string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "# Tags:") {
+			if strings.Contains(trim, "prod") || strings.Contains(trim, "eu") {
+				t.Errorf("inherited tag bled into per-host # Tags: line: %q", trim)
+			}
+		}
+	}
+}
