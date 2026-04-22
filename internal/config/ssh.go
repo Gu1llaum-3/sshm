@@ -250,6 +250,8 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 	var hosts []SSHHost
 	var currentHost *SSHHost
 	var pendingTags []string
+	var fileTags []string
+	var headerClosed bool
 	scanner := bufio.NewScanner(file)
 	lineNumber := 0
 
@@ -259,6 +261,33 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 
 		// Ignore empty lines
 		if line == "" {
+			continue
+		}
+
+		// File-level tags: header-only directive
+		if strings.HasPrefix(line, "# FileTags:") {
+			if headerClosed {
+				fmt.Fprintf(os.Stderr, "warning: `# FileTags:` after first Host in %s:%d ignored\n", configPath, lineNumber)
+				continue
+			}
+			tagsStr := strings.TrimSpace(strings.TrimPrefix(line, "# FileTags:"))
+			if tagsStr != "" {
+				seen := make(map[string]struct{}, len(fileTags))
+				for _, t := range fileTags {
+					seen[t] = struct{}{}
+				}
+				for _, tag := range strings.Split(tagsStr, ",") {
+					tag = strings.TrimSpace(tag)
+					if tag == "" {
+						continue
+					}
+					if _, dup := seen[tag]; dup {
+						continue
+					}
+					seen[tag] = struct{}{}
+					fileTags = append(fileTags, tag)
+				}
+			}
 			continue
 		}
 
@@ -294,6 +323,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 
 		switch key {
 		case "include":
+			headerClosed = true
 			// Handle Include directive
 			includeHosts, err := processIncludeDirective(value, configPath, processedFiles)
 			if err != nil {
@@ -302,6 +332,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 			hosts = append(hosts, includeHosts...)
 		case "host":
+			headerClosed = true
 			// New host, save previous one if it exists
 			if currentHost != nil {
 				hosts = append(hosts, *currentHost)
@@ -341,11 +372,12 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			// For multiple hosts, we create the first one normally
 			// and will duplicate it for others after parsing the block
 			currentHost = &SSHHost{
-				Name:       validHostNames[0], // First name as reference
-				Port:       "22",              // Default port
-				Tags:       pendingTags,       // Assign pending tags to this host
-				SourceFile: absPath,           // Track which file this host comes from
-				LineNumber: lineNumber,        // Track the line number where Host declaration starts
+				Name:          validHostNames[0], // First name as reference
+				Port:          "22",              // Default port
+				Tags:          pendingTags,       // Assign pending tags to this host
+				InheritedTags: append([]string(nil), fileTags...),
+				SourceFile:    absPath,           // Track which file this host comes from
+				LineNumber:    lineNumber,        // Track the line number where Host declaration starts
 			}
 
 			// Store additional host names for later processing
@@ -913,7 +945,7 @@ func quickHostSearchInFile(hostName string, configPath string, processedFiles ma
 		line := strings.TrimSpace(scanner.Text())
 
 		// Ignore empty lines and comments (except includes)
-		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "# Tags:")) {
+		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "# Tags:") && !strings.HasPrefix(line, "# FileTags:")) {
 			continue
 		}
 
