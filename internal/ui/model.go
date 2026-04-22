@@ -156,7 +156,9 @@ func (m *Model) updateTableStyles() {
 
 // rebuildFilteredHosts recomputes m.hosts and m.filteredHosts from m.allHosts
 // by chaining every active filter in a deterministic order:
-// visibility (hidden tag) → source file → search text → sort.
+// visibility (hidden tag) → source file → sort → search text.
+// Search is applied whenever m.searchInput.Value() != "", regardless of
+// m.searchMode (a stale search term persists across mode exits in this TUI).
 // Callers that mutate m.allHosts, m.selectedSourceFile, m.showHidden,
 // m.sortMode, or m.searchInput should call this and then updateTableRows().
 func (m *Model) rebuildFilteredHosts() {
