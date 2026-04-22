@@ -2,9 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"path/filepath"
-	"github.com/Gu1llaum-3/sshm/internal/config"
 	"strings"
+
+	"github.com/Gu1llaum-3/sshm/internal/config"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -87,28 +87,9 @@ func NewFileSelectorWithAll(title string, styles Styles, width, height int,
 // newFileSelectorFromFiles creates a file selector from a list of files
 func newFileSelectorFromFiles(title string, styles Styles, width, height int, files []string) (*fileSelectorModel, error) {
 
-	// Convert absolute paths to more user-friendly names
 	var displayNames []string
-	homeDir, _ := config.GetSSHDirectory()
-
 	for _, file := range files {
-		// Check if it's the main config file
-		mainConfig, _ := config.GetDefaultSSHConfigPath()
-		if file == mainConfig {
-			displayNames = append(displayNames, "Main SSH Config (~/.ssh/config)")
-		} else {
-			// Try to make path relative to home/.ssh/
-			if strings.HasPrefix(file, homeDir) {
-				relPath, err := filepath.Rel(homeDir, file)
-				if err == nil {
-					displayNames = append(displayNames, fmt.Sprintf("~/.ssh/%s", relPath))
-				} else {
-					displayNames = append(displayNames, file)
-				}
-			} else {
-				displayNames = append(displayNames, file)
-			}
-		}
+		displayNames = append(displayNames, sourceFileDisplayName(file))
 	}
 
 	return &fileSelectorModel{
