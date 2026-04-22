@@ -102,6 +102,13 @@ func (m *infoFormModel) View() string {
 		{"Tags", formatTags(m.host.Tags)},
 	}
 
+	if len(m.host.InheritedTags) > 0 {
+		sections = append(sections, struct {
+			label string
+			value string
+		}{"Inherited", formatTags(m.host.InheritedTags)})
+	}
+
 	// Render each section
 	for _, section := range sections {
 		// Label style
