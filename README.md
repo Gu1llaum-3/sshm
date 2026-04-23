@@ -30,7 +30,7 @@ SSHM is a beautiful command-line tool that transforms how you manage and connect
 - **⚡ Quick Connect** - Connect to any host instantly through the TUI or the CLI with `sshm <host>`
 - **🔄 Port Forwarding** - Easy setup for Local, Remote, and Dynamic (SOCKS) forwarding with history persistence
 - **📝 Easy Management** - Add, edit, move, and manage SSH configurations seamlessly
-- **🏷️ Tag Support** - Organize your hosts with custom tags for better categorization; use the special `hidden` tag to exclude hosts from the list while keeping them connectable
+- **🏷️ Tag Support** - Organize your hosts with custom tags for better categorization; declare file-wide tags via `# FileTags:` so every host in a config file inherits them; use the special `hidden` tag to exclude hosts from the list while keeping them connectable
 - **🔍 Smart Search** - Find hosts quickly with built-in filtering and search
 - **📝 Real-time Status** - Live SSH connectivity indicators with asynchronous ping checks and color-coded status
 - **🔔 Smart Updates** - Automatic version checking with update notifications
@@ -556,6 +556,40 @@ SSHM remembers your port forwarding configurations for easy reuse:
 
 SSHM works directly with your standard SSH configuration file (`~/.ssh/config`). It adds special comment tags for enhanced functionality while maintaining full compatibility with standard SSH tools.
 
+### File-level Tags (`# FileTags:`)
+
+Besides per-host `# Tags:`, SSHM recognizes a `# FileTags:` directive placed in the header of a config file. Every host defined in that file inherits those tags automatically — useful when a whole file groups hosts that share an attribute (a project, an environment, a region).
+
+**Rules:**
+- Must appear **before the first `Host` or `Include`** in the file. Later occurrences are ignored.
+- **Strictly local to the file** — inherited tags do NOT cascade across `Include` boundaries.
+- Multiple `# FileTags:` lines in the header accumulate (union).
+- The union with a host's own `# Tags:` is deduplicated. Inherited tags participate in search, filtering, and autocompletion just like own tags.
+- Inherited tags are **read-only** in the edit form: you cannot remove them from an individual host — edit the `# FileTags:` directive directly if you want to change them.
+
+**Visual distinction in the TUI:** own tags are prefixed with `#`, inherited tags with `%` — so `%prod %eu #db` tells you `prod` and `eu` come from the file header while `db` is host-specific.
+
+**Example:**
+```ssh
+# ~/.ssh/config.d/prod
+# FileTags: prod, critical
+
+# Tags: db
+Host demo-db
+    HostName 10.0.0.1
+    User admin
+
+Host demo-web
+    HostName 10.0.0.2
+    User admin
+```
+
+Resulting tags:
+- `demo-db` → `%prod %critical #db`
+- `demo-web` → `%prod %critical`
+
+Both hosts match `sshm search --tags prod`. `sshm info demo-db --pretty` returns `tags` (union) and a separate `inheritedTags` array.
+
 ### SSH Include Support
 
 SSHM fully supports SSH Include directives, allowing you to organize your SSH configurations across multiple files. This is particularly useful for managing large numbers of hosts or organizing configurations by environment, project, or team.
@@ -649,6 +683,7 @@ SSHM supports all standard SSH configuration options:
 - `ProxyJump` - Jump server for connection tunneling (e.g., `user@jumphost:port`)
 - `ProxyCommand` - Jump command for connection tunneling (e.g, `ssh -W %h:%p Jumphost`)
 - `Tags` - Custom tags (SSHM extension); the special tag `hidden` hides the host from the TUI and `sshm search` while keeping it connectable via `sshm <host>`
+- `FileTags` - File-scoped tags (SSHM extension); declared via a `# FileTags:` comment at the top of a config file and inherited by every host defined in that file (see [File-level Tags](#file-level-tags-filetags) below)
 
 **Additional SSH Options:**
 You can add any valid SSH option using the "SSH Options" field in the interactive forms. Enter them in command-line format (e.g., `-o Compression=yes -o ServerAliveInterval=60`) and SSHM will automatically convert them to the proper SSH config format.
