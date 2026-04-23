@@ -44,6 +44,29 @@ type SSHHost struct {
 	aliasNames []string `json:"-"` // Do not serialize this field
 }
 
+// FormattedTags returns AllTags() with a prefix per tag: "%" for inherited
+// tags (from `# FileTags:`), "#" for the host's own tags. Order matches
+// AllTags (inherited first). Returns nil if both are empty.
+func (h *SSHHost) FormattedTags() []string {
+	tags := h.AllTags()
+	if len(tags) == 0 {
+		return nil
+	}
+	inherited := make(map[string]struct{}, len(h.InheritedTags))
+	for _, t := range h.InheritedTags {
+		inherited[t] = struct{}{}
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if _, ok := inherited[t]; ok {
+			out = append(out, "%"+t)
+		} else {
+			out = append(out, "#"+t)
+		}
+	}
+	return out
+}
+
 // AllTags returns the deduplicated union of InheritedTags and Tags,
 // inherited first, then own tags. Returns nil if both are empty.
 func (h *SSHHost) AllTags() []string {

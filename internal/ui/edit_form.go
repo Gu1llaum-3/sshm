@@ -599,7 +599,7 @@ func (m *editFormModel) renderEditGeneralTab() string {
 		if field.index == 7 && len(m.host.InheritedTags) > 0 {
 			tagLabels := make([]string, 0, len(m.host.InheritedTags))
 			for _, t := range m.host.InheritedTags {
-				tagLabels = append(tagLabels, "#"+t)
+				tagLabels = append(tagLabels, "%"+t)
 			}
 			src := formatConfigFile(m.host.SourceFile)
 			if src == "" {
