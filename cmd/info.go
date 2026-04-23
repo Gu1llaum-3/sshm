@@ -28,6 +28,7 @@ type infoResult struct {
 	ProxyCommand  *string     `json:"proxy_command"`
 	Options       *string     `json:"options"`
 	Tags          []string    `json:"tags"`
+	InheritedTags []string    `json:"inheritedTags,omitempty"`
 	RemoteCommand *string     `json:"remote_command"`
 	RequestTTY    *string     `json:"request_tty"`
 	Source        *infoSource `json:"source"`
@@ -135,7 +136,8 @@ func runInfo(out io.Writer, hostnameArg string, cfgFile string, pretty bool) int
 		ProxyJump:     maybeString(host.ProxyJump),
 		ProxyCommand:  maybeString(host.ProxyCommand),
 		Options:       maybeString(host.Options),
-		Tags:          host.Tags,
+		Tags:          host.AllTags(),
+		InheritedTags: host.InheritedTags,
 		RemoteCommand: maybeString(host.RemoteCommand),
 		RequestTTY:    maybeString(host.RequestTTY),
 		Source: &infoSource{

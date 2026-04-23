@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/Gu1llaum-3/sshm/internal/config"
 )
 
 func TestSearchCommand(t *testing.T) {
@@ -102,6 +104,22 @@ func TestFormatOutput(t *testing.T) {
 				t.Errorf("isValidFormat(%q) = %v, want %v", tt.format, valid, tt.valid)
 			}
 		})
+	}
+}
+
+func TestSearchByTag_MatchesInheritedTags(t *testing.T) {
+	hosts := []config.SSHHost{
+		{Name: "h1", InheritedTags: []string{"prod"}},
+		{Name: "h2", Tags: []string{"prod"}},
+		{Name: "h3", Tags: []string{"dev"}, InheritedTags: []string{"staging"}},
+	}
+	got := filterHostsByTag(hosts, "prod")
+	if len(got) != 2 {
+		t.Errorf("filterHostsByTag('prod') returned %d hosts, want 2", len(got))
+	}
+	gotStaging := filterHostsByTag(hosts, "staging")
+	if len(gotStaging) != 1 || gotStaging[0].Name != "h3" {
+		t.Errorf("filterHostsByTag('staging') = %v, want [h3]", gotStaging)
 	}
 }
 
