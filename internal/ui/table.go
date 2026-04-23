@@ -36,9 +36,9 @@ func (m *Model) calculateDynamicColumnWidths(hosts []config.SSHHost) (int, int, 
 
 		// Calculate tags string length
 		var tagsStr string
-		if len(host.Tags) > 0 {
+		if len(host.AllTags()) > 0 {
 			var formattedTags []string
-			for _, tag := range host.Tags {
+			for _, tag := range host.AllTags() {
 				formattedTags = append(formattedTags, "#"+tag)
 			}
 			tagsStr = strings.Join(formattedTags, " ")
@@ -135,10 +135,10 @@ func (m *Model) updateTableRows() {
 
 		// Format tags for display
 		var tagsStr string
-		if len(host.Tags) > 0 {
+		if len(host.AllTags()) > 0 {
 			// Add the # prefix to each tag and join them with spaces
 			var formattedTags []string
-			for _, tag := range host.Tags {
+			for _, tag := range host.AllTags() {
 				formattedTags = append(formattedTags, "#"+tag)
 			}
 			tagsStr = strings.Join(formattedTags, " ")
@@ -294,10 +294,10 @@ func calculateTagsColumnWidth(hosts []config.SSHHost) int {
 	for _, host := range hosts {
 		// Format tags exactly as they appear in the table
 		var tagsStr string
-		if len(host.Tags) > 0 {
+		if len(host.AllTags()) > 0 {
 			// Add the # prefix to each tag and join them with spaces
 			var formattedTags []string
-			for _, tag := range host.Tags {
+			for _, tag := range host.AllTags() {
 				formattedTags = append(formattedTags, "#"+tag)
 			}
 			tagsStr = strings.Join(formattedTags, " ")

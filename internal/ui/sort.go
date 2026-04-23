@@ -93,7 +93,7 @@ func (m Model) filterHostsByWord(word string) []config.SSHHost {
 			}
 
 			// Check the tags
-			for _, tag := range host.Tags {
+			for _, tag := range host.AllTags() {
 				if strings.Contains(strings.ToLower(tag), word) {
 					filtered = append(filtered, host)
 					break
