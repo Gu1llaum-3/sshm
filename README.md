@@ -566,6 +566,7 @@ Besides per-host `# Tags:`, SSHM recognizes a `# FileTags:` directive placed in 
 - Multiple `# FileTags:` lines in the header accumulate (union).
 - The union with a host's own `# Tags:` is deduplicated. Inherited tags participate in search, filtering, and autocompletion just like own tags.
 - Inherited tags are **read-only** in the edit form: you cannot remove them from an individual host — edit the `# FileTags:` directive directly if you want to change them.
+- The special `hidden` tag works at the file level too: `# FileTags: hidden` hides every host in that file from the TUI and `sshm search` (they remain connectable via `sshm <host>`).
 
 **Visual distinction in the TUI:** own tags are prefixed with `#`, inherited tags with `%` — so `%prod %eu #db` tells you `prod` and `eu` come from the file header while `db` is host-specific.
 

@@ -1705,11 +1705,12 @@ func GetAllConfigFiles() ([]string, error) {
 	return files, nil
 }
 
-// FilterVisibleHosts returns only hosts that do not have the "hidden" tag.
+// FilterVisibleHosts returns only hosts that do not have the "hidden" tag,
+// considering both own tags and tags inherited from `# FileTags:`.
 func FilterVisibleHosts(hosts []SSHHost) []SSHHost {
 	var visible []SSHHost
 	for _, h := range hosts {
-		if !hostHasTag(h.Tags, "hidden") {
+		if !hostHasTag(h.AllTags(), "hidden") {
 			visible = append(visible, h)
 		}
 	}

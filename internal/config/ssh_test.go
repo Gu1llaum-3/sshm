@@ -1788,6 +1788,23 @@ Host "quoted1" "quoted2"
 	}
 }
 
+func TestFilterVisibleHosts_HonorsInheritedHiddenTag(t *testing.T) {
+	hosts := []SSHHost{
+		{Name: "visible"},
+		{Name: "own-hidden", Tags: []string{"hidden"}},
+		{Name: "file-hidden", InheritedTags: []string{"hidden"}},
+		{Name: "file-hidden-mixed", Tags: []string{"db"}, InheritedTags: []string{"hidden"}},
+	}
+	got := FilterVisibleHosts(hosts)
+	if len(got) != 1 || got[0].Name != "visible" {
+		names := make([]string, len(got))
+		for i, h := range got {
+			names[i] = h.Name
+		}
+		t.Errorf("FilterVisibleHosts = %v, want [visible]", names)
+	}
+}
+
 func TestAllTags_UnionAndDedup(t *testing.T) {
 	h := SSHHost{
 		Tags:          []string{"db", "prod"},
