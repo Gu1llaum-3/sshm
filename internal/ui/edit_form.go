@@ -596,6 +596,20 @@ func (m *editFormModel) renderEditGeneralTab() string {
 		if m.focusArea == focusAreaProperties && m.focused == field.index {
 			fieldStyle = m.styles.FocusedLabel
 		}
+		if field.index == 7 && len(m.host.InheritedTags) > 0 {
+			tagLabels := make([]string, 0, len(m.host.InheritedTags))
+			for _, t := range m.host.InheritedTags {
+				tagLabels = append(tagLabels, "%"+t)
+			}
+			src := formatConfigFile(m.host.SourceFile)
+			if src == "" {
+				src = "file"
+			}
+			line := fmt.Sprintf("Inherited tags: %s (from %s, not editable here)",
+				strings.Join(tagLabels, " "), src)
+			b.WriteString(m.styles.FormHelp.Render(line))
+			b.WriteString("\n\n")
+		}
 		b.WriteString(fieldStyle.Render(field.label))
 		b.WriteString("\n")
 		b.WriteString(m.inputs[field.index].View())

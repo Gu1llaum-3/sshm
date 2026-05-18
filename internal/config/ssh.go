@@ -36,11 +36,60 @@ type SSHHost struct {
 	RemoteCommand string // Command to execute after SSH connection
 	RequestTTY    string // Request TTY (yes, no, force, auto)
 	Tags          []string
-	SourceFile    string // Path to the config file where this host is defined
-	LineNumber    int    // Line number in the source file where this host block starts (1-indexed)
+	InheritedTags []string // Tags inherited from `# FileTags:` in the source file. Populated by parser, never edited.
+	SourceFile    string   // Path to the config file where this host is defined
+	LineNumber    int      // Line number in the source file where this host block starts (1-indexed)
 
 	// Temporary field to handle multiple aliases during parsing
 	aliasNames []string `json:"-"` // Do not serialize this field
+}
+
+// FormattedTags returns AllTags() with a prefix per tag: "%" for inherited
+// tags (from `# FileTags:`), "#" for the host's own tags. Order matches
+// AllTags (inherited first). Returns nil if both are empty.
+func (h *SSHHost) FormattedTags() []string {
+	tags := h.AllTags()
+	if len(tags) == 0 {
+		return nil
+	}
+	inherited := make(map[string]struct{}, len(h.InheritedTags))
+	for _, t := range h.InheritedTags {
+		inherited[t] = struct{}{}
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if _, ok := inherited[t]; ok {
+			out = append(out, "%"+t)
+		} else {
+			out = append(out, "#"+t)
+		}
+	}
+	return out
+}
+
+// AllTags returns the deduplicated union of InheritedTags and Tags,
+// inherited first, then own tags. Returns nil if both are empty.
+func (h *SSHHost) AllTags() []string {
+	if len(h.InheritedTags) == 0 && len(h.Tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(h.InheritedTags)+len(h.Tags))
+	out := make([]string, 0, len(h.InheritedTags)+len(h.Tags))
+	for _, t := range h.InheritedTags {
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	for _, t := range h.Tags {
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }
 
 // GetDefaultSSHConfigPath returns the default SSH config path for the current platform
@@ -224,6 +273,8 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 	var hosts []SSHHost
 	var currentHost *SSHHost
 	var pendingTags []string
+	var fileTags []string
+	var headerClosed bool
 	scanner := bufio.NewScanner(file)
 	lineNumber := 0
 
@@ -233,6 +284,33 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 
 		// Ignore empty lines
 		if line == "" {
+			continue
+		}
+
+		// File-level tags: header-only directive
+		if strings.HasPrefix(line, "# FileTags:") {
+			if headerClosed {
+				fmt.Fprintf(os.Stderr, "warning: `# FileTags:` after first Host in %s:%d ignored\n", configPath, lineNumber)
+				continue
+			}
+			tagsStr := strings.TrimSpace(strings.TrimPrefix(line, "# FileTags:"))
+			if tagsStr != "" {
+				seen := make(map[string]struct{}, len(fileTags))
+				for _, t := range fileTags {
+					seen[t] = struct{}{}
+				}
+				for _, tag := range strings.Split(tagsStr, ",") {
+					tag = strings.TrimSpace(tag)
+					if tag == "" {
+						continue
+					}
+					if _, dup := seen[tag]; dup {
+						continue
+					}
+					seen[tag] = struct{}{}
+					fileTags = append(fileTags, tag)
+				}
+			}
 			continue
 		}
 
@@ -268,6 +346,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 
 		switch key {
 		case "include":
+			headerClosed = true
 			// Handle Include directive
 			includeHosts, err := processIncludeDirective(value, configPath, processedFiles)
 			if err != nil {
@@ -276,6 +355,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 			hosts = append(hosts, includeHosts...)
 		case "host":
+			headerClosed = true
 			// New host, save previous one if it exists
 			if currentHost != nil {
 				hosts = append(hosts, *currentHost)
@@ -315,11 +395,12 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			// For multiple hosts, we create the first one normally
 			// and will duplicate it for others after parsing the block
 			currentHost = &SSHHost{
-				Name:       validHostNames[0], // First name as reference
-				Port:       "22",              // Default port
-				Tags:       pendingTags,       // Assign pending tags to this host
-				SourceFile: absPath,           // Track which file this host comes from
-				LineNumber: lineNumber,        // Track the line number where Host declaration starts
+				Name:          validHostNames[0], // First name as reference
+				Port:          "22",              // Default port
+				Tags:          pendingTags,       // Assign pending tags to this host
+				InheritedTags: append([]string(nil), fileTags...),
+				SourceFile:    absPath,           // Track which file this host comes from
+				LineNumber:    lineNumber,        // Track the line number where Host declaration starts
 			}
 
 			// Store additional host names for later processing
@@ -887,7 +968,7 @@ func quickHostSearchInFile(hostName string, configPath string, processedFiles ma
 		line := strings.TrimSpace(scanner.Text())
 
 		// Ignore empty lines and comments (except includes)
-		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "# Tags:")) {
+		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "# Tags:") && !strings.HasPrefix(line, "# FileTags:")) {
 			continue
 		}
 
@@ -1624,11 +1705,12 @@ func GetAllConfigFiles() ([]string, error) {
 	return files, nil
 }
 
-// FilterVisibleHosts returns only hosts that do not have the "hidden" tag.
+// FilterVisibleHosts returns only hosts that do not have the "hidden" tag,
+// considering both own tags and tags inherited from `# FileTags:`.
 func FilterVisibleHosts(hosts []SSHHost) []SSHHost {
 	var visible []SSHHost
 	for _, h := range hosts {
-		if !hostHasTag(h.Tags, "hidden") {
+		if !hostHasTag(h.AllTags(), "hidden") {
 			visible = append(visible, h)
 		}
 	}

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -1783,6 +1784,277 @@ Host "quoted1" "quoted2"
 	if host, found := hostMap["qa-test-vm"]; found {
 		if host.Hostname != "qa-test-vm.example.com" {
 			t.Errorf("Host qa-test-vm has wrong hostname: %q", host.Hostname)
+		}
+	}
+}
+
+func TestFilterVisibleHosts_HonorsInheritedHiddenTag(t *testing.T) {
+	hosts := []SSHHost{
+		{Name: "visible"},
+		{Name: "own-hidden", Tags: []string{"hidden"}},
+		{Name: "file-hidden", InheritedTags: []string{"hidden"}},
+		{Name: "file-hidden-mixed", Tags: []string{"db"}, InheritedTags: []string{"hidden"}},
+	}
+	got := FilterVisibleHosts(hosts)
+	if len(got) != 1 || got[0].Name != "visible" {
+		names := make([]string, len(got))
+		for i, h := range got {
+			names[i] = h.Name
+		}
+		t.Errorf("FilterVisibleHosts = %v, want [visible]", names)
+	}
+}
+
+func TestAllTags_UnionAndDedup(t *testing.T) {
+	h := SSHHost{
+		Tags:          []string{"db", "prod"},
+		InheritedTags: []string{"prod", "eu-west"},
+	}
+	got := h.AllTags()
+	want := []string{"prod", "eu-west", "db"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AllTags() = %v, want %v", got, want)
+	}
+}
+
+func TestAllTags_EmptySlicesSafe(t *testing.T) {
+	h := SSHHost{}
+	if got := h.AllTags(); len(got) != 0 {
+		t.Errorf("AllTags() on empty host = %v, want empty", got)
+	}
+}
+
+func TestAllTags_OnlyInherited(t *testing.T) {
+	h := SSHHost{InheritedTags: []string{"a", "b"}}
+	got := h.AllTags()
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AllTags() = %v, want %v", got, want)
+	}
+}
+
+func TestAllTags_OnlyOwn(t *testing.T) {
+	h := SSHHost{Tags: []string{"a", "b"}}
+	got := h.AllTags()
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AllTags() = %v, want %v", got, want)
+	}
+}
+
+func writeTempConfig(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config")
+	if err := os.WriteFile(p, []byte(content), 0600); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+	return p
+}
+
+func TestParse_FileTags_AppliedToAllHosts(t *testing.T) {
+	p := writeTempConfig(t, `# FileTags: prod, critical
+
+Host db-main
+    HostName 10.0.0.1
+
+Host web-main
+    HostName 10.0.0.2
+`)
+	hosts, err := ParseSSHConfigFile(p)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(hosts) != 2 {
+		t.Fatalf("got %d hosts, want 2", len(hosts))
+	}
+	for _, h := range hosts {
+		if !reflect.DeepEqual(h.InheritedTags, []string{"prod", "critical"}) {
+			t.Errorf("host %s InheritedTags = %v, want [prod critical]", h.Name, h.InheritedTags)
+		}
+	}
+}
+
+func TestParse_FileTags_MultipleHeaderLines_Accumulate(t *testing.T) {
+	p := writeTempConfig(t, `# FileTags: a
+# FileTags: b, c
+
+Host h1
+    HostName 10.0.0.1
+`)
+	hosts, err := ParseSSHConfigFile(p)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !reflect.DeepEqual(hosts[0].InheritedTags, []string{"a", "b", "c"}) {
+		t.Errorf("InheritedTags = %v, want [a b c]", hosts[0].InheritedTags)
+	}
+}
+
+func TestParse_FileTags_AfterFirstHost_Ignored(t *testing.T) {
+	p := writeTempConfig(t, `# FileTags: early
+
+Host h1
+    HostName 10.0.0.1
+
+# FileTags: late
+
+Host h2
+    HostName 10.0.0.2
+`)
+	hosts, err := ParseSSHConfigFile(p)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for _, h := range hosts {
+		if !reflect.DeepEqual(h.InheritedTags, []string{"early"}) {
+			t.Errorf("host %s InheritedTags = %v, want [early]", h.Name, h.InheritedTags)
+		}
+	}
+}
+
+func TestParse_FileTags_MixedWithOwnTags(t *testing.T) {
+	p := writeTempConfig(t, `# FileTags: prod
+
+# Tags: db
+Host h1
+    HostName 10.0.0.1
+
+Host h2
+    HostName 10.0.0.2
+`)
+	hosts, err := ParseSSHConfigFile(p)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	byName := map[string]SSHHost{}
+	for _, h := range hosts {
+		byName[h.Name] = h
+	}
+	h1 := byName["h1"]
+	if !reflect.DeepEqual(h1.Tags, []string{"db"}) {
+		t.Errorf("h1.Tags = %v, want [db]", h1.Tags)
+	}
+	if !reflect.DeepEqual(h1.InheritedTags, []string{"prod"}) {
+		t.Errorf("h1.InheritedTags = %v, want [prod]", h1.InheritedTags)
+	}
+	if got, want := h1.AllTags(), []string{"prod", "db"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("h1.AllTags() = %v, want %v", got, want)
+	}
+	h2 := byName["h2"]
+	if len(h2.Tags) != 0 {
+		t.Errorf("h2.Tags = %v, want empty", h2.Tags)
+	}
+	if !reflect.DeepEqual(h2.InheritedTags, []string{"prod"}) {
+		t.Errorf("h2.InheritedTags = %v, want [prod]", h2.InheritedTags)
+	}
+}
+
+func TestParse_FileTags_NotCascadedViaInclude(t *testing.T) {
+	dir := t.TempDir()
+	included := filepath.Join(dir, "child")
+	if err := os.WriteFile(included, []byte(`Host child-h
+    HostName 10.0.0.3
+`), 0600); err != nil {
+		t.Fatalf("write child: %v", err)
+	}
+	parent := filepath.Join(dir, "parent")
+	content := "# FileTags: parent-only\n\nInclude " + included + "\n\nHost parent-h\n    HostName 10.0.0.4\n"
+	if err := os.WriteFile(parent, []byte(content), 0600); err != nil {
+		t.Fatalf("write parent: %v", err)
+	}
+
+	hosts, err := ParseSSHConfigFile(parent)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	byName := map[string]SSHHost{}
+	for _, h := range hosts {
+		byName[h.Name] = h
+	}
+	if got := byName["child-h"].InheritedTags; len(got) != 0 {
+		t.Errorf("child-h InheritedTags = %v, want empty (no cascade)", got)
+	}
+	if got := byName["parent-h"].InheritedTags; !reflect.DeepEqual(got, []string{"parent-only"}) {
+		t.Errorf("parent-h InheritedTags = %v, want [parent-only]", got)
+	}
+}
+
+func TestRoundTrip_FileTagsPreserved_OnAddEditDelete(t *testing.T) {
+	initial := `# FileTags: prod, eu
+
+# Tags: db
+Host h1
+    HostName 10.0.0.1
+    User admin
+
+Host h2
+    HostName 10.0.0.2
+    User admin
+`
+	p := writeTempConfig(t, initial)
+
+	// Edit h1
+	newH1 := SSHHost{Name: "h1", Hostname: "10.0.0.99", User: "admin", Port: "22", Tags: []string{"db"}}
+	if err := UpdateSSHHostInFile("h1", newH1, p); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	assertFileTagsHeader(t, p, "# FileTags: prod, eu")
+	assertNoFileTagsBleedIntoHostTags(t, p)
+
+	// Add h3
+	h3 := SSHHost{Name: "h3", Hostname: "10.0.0.3", User: "admin", Port: "22"}
+	if err := AddSSHHostToFile(h3, p); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	assertFileTagsHeader(t, p, "# FileTags: prod, eu")
+
+	// Delete h2
+	if err := DeleteSSHHostFromFile("h2", p); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	assertFileTagsHeader(t, p, "# FileTags: prod, eu")
+
+	// Reparse — InheritedTags must remain set on all hosts; none of them should have prod/eu in their own Tags slice.
+	hosts, err := ParseSSHConfigFile(p)
+	if err != nil {
+		t.Fatalf("parse after round-trip: %v", err)
+	}
+	for _, h := range hosts {
+		if !reflect.DeepEqual(h.InheritedTags, []string{"prod", "eu"}) {
+			t.Errorf("host %s InheritedTags = %v, want [prod eu]", h.Name, h.InheritedTags)
+		}
+		for _, tag := range h.Tags {
+			if tag == "prod" || tag == "eu" {
+				t.Errorf("host %s has inherited tag %q duplicated in own Tags", h.Name, tag)
+			}
+		}
+	}
+}
+
+func assertFileTagsHeader(t *testing.T, path, wantLine string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(b), wantLine+"\n") {
+		t.Errorf("expected %q in file, got:\n%s", wantLine, string(b))
+	}
+}
+
+func assertNoFileTagsBleedIntoHostTags(t *testing.T, path string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "# Tags:") {
+			if strings.Contains(trim, "prod") || strings.Contains(trim, "eu") {
+				t.Errorf("inherited tag bled into per-host # Tags: line: %q", trim)
+			}
 		}
 	}
 }

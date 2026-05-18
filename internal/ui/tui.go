@@ -100,12 +100,7 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 
 		// Format tags for display
 		var tagsStr string
-		if len(host.Tags) > 0 {
-			// Add the # prefix to each tag and join them with spaces
-			var formattedTags []string
-			for _, tag := range host.Tags {
-				formattedTags = append(formattedTags, "#"+tag)
-			}
+		if formattedTags := host.FormattedTags(); len(formattedTags) > 0 {
 			tagsStr = strings.Join(formattedTags, " ")
 		}
 
