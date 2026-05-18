@@ -107,6 +107,8 @@ sshm
 - `m` - Move host to another config file (requires SSH Include directives)
 - `f` - Port forwarding setup
 - `H` - Toggle hidden hosts visibility
+- `c` - Filter hosts by config file
+- `C` - Clear config-file filter
 - `q` - Quit
 - `/` - Search/filter hosts
 
