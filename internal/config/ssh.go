@@ -343,7 +343,8 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 		case "identityfile":
 			if currentHost != nil {
-				currentHost.Identity = value
+				// Remove surrounding double quotes if present
+				currentHost.Identity = strings.Trim(value, `"`)
 			}
 		case "proxyjump":
 			if currentHost != nil {
