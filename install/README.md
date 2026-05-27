@@ -56,6 +56,12 @@ FORCE_INSTALL=true bash -c "$(curl -sSL https://raw.githubusercontent.com/Gu1lla
 FORCE_INSTALL=false bash -c "$(curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh)"
 ```
 
+**Install locally without root permissions:**
+
+```bash
+LOCAL_INSTALL=true bash -c "$(curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh)"
+```
+
 ### Manual Install
 
 1. Download the script:
