@@ -1,13 +1,17 @@
 #!/bin/bash
 
-INSTALL_DIR="/usr/local/bin"
-EXECUTABLE_NAME=sshm
-EXECUTABLE_PATH="$INSTALL_DIR/$EXECUTABLE_NAME"
+# Default configurations, overrideable via environment variables
+INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+EXECUTABLE_NAME="sshm"
 USE_SUDO="false"
 OS=""
 ARCH=""
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
 SSHM_VERSION="${SSHM_VERSION:-latest}"
+LOCAL_INSTALL="${LOCAL_INSTALL:-false}"
+
+# The full path will be evaluated in main() after parsing arguments
+EXECUTABLE_PATH=""
 
 RED='\033[0;31m'
 PURPLE='\033[0;35m'
@@ -19,6 +23,7 @@ usage() {
     printf "${PURPLE}SSHM Installation Script${NC}\n\n"
     printf "Usage:\n"
     printf "  Default (latest stable):     ${GREEN}bash install.sh${NC}\n"
+    printf "  Local install (~/sour/bin):${GREEN}bash install.sh --local${NC}\n"
     printf "  Specific version:            ${GREEN}SSHM_VERSION=v1.8.0 bash install.sh${NC}\n"
     printf "  Beta/pre-release:            ${GREEN}SSHM_VERSION=v1.8.1-beta bash install.sh${NC}\n"
     printf "  Force install:               ${GREEN}FORCE_INSTALL=true bash install.sh${NC}\n"
@@ -26,7 +31,8 @@ usage() {
     printf "Environment variables:\n"
     printf "  SSHM_VERSION    - Version to install (default: latest)\n"
     printf "  FORCE_INSTALL   - Skip confirmation prompts (default: false)\n"
-    printf "  INSTALL_DIR     - Installation directory (default: /usr/local/bin)\n\n"
+    printf "  INSTALL_DIR     - Installation directory (default: /usr/local/bin)\n"
+    printf "  LOCAL_INSTALL   - Install to ~/.local/bin without sudo (default: false)\n\n"
 }
 
 setSystem() {
@@ -40,14 +46,18 @@ setSystem() {
         arm64) ARCH="arm64" ;;
     esac
 
-    OS=$(echo `uname`|tr '[:upper:]' '[:lower:]')
+    OS=$(echo $(uname) | tr '[:upper:]' '[:lower:]')
     
     # Determine if we need sudo
-    if [ "$OS" = "linux" ]; then
-        USE_SUDO="true"
-    fi
-    if [ "$OS" = "darwin" ]; then
-        USE_SUDO="true"
+    if [ "$LOCAL_INSTALL" = "true" ]; then
+        USE_SUDO="false"
+    else
+        # Automatically check if we lack write permissions to the install directory
+        if [ ! -w "$INSTALL_DIR" ]; then
+            if [ "$OS" = "linux" ] || [ "$OS" = "darwin" ]; then
+                USE_SUDO="true"
+            fi
+        fi
     fi
 }
 
@@ -204,11 +214,27 @@ checkExisting() {
 }
 
 main() {
-    # Check for help argument
-    if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ "$1" = "help" ]; then
-        usage
-        exit 0
+    # Parse arguments
+    for arg in "$@"; do
+        case $arg in
+            -h|--help|help)
+                usage
+                exit 0
+                ;;
+            -l|--local)
+                LOCAL_INSTALL="true"
+                ;;
+        esac
+    done
+    
+    # Handle local install routing
+    if [ "$LOCAL_INSTALL" = "true" ]; then
+        INSTALL_DIR="$HOME/.local/bin"
+        mkdir -p "$INSTALL_DIR"
     fi
+    
+    # Set the final executable path
+    EXECUTABLE_PATH="$INSTALL_DIR/$EXECUTABLE_NAME"
     
     printf "${PURPLE}Installing SSHM - SSH Connection Manager${NC}\n\n"
     

@@ -10,6 +10,13 @@ This directory contains installation scripts for SSHM.
 curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh | bash
 ```
 
+### Quick Install (User Only)
+This option will install SSHM locally for the installation user only, this removes the need for sudo / root permissions. SSHM will be installed at `~/.local/bin` by default.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh | LOCAL_INSTALL=true bash
+```
+
 **Note:** When using the pipe method, the installer will automatically proceed with installation if SSHM is already installed.
 
 ## Windows Installation
