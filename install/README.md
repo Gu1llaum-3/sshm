@@ -11,6 +11,7 @@ curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh
 ```
 
 ### Quick Install (User Only)
+
 This option will install SSHM locally for the installation user only, this removes the need for sudo / root permissions. SSHM will be installed at `~/.local/bin` by default.
 
 ```bash
@@ -30,11 +31,13 @@ irm https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/windows.ps1 |
 ### Install Options
 
 **Force install without prompts:**
+
 ```powershell
 iex "& { $(irm https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/windows.ps1) } -Force"
 ```
 
 **Custom installation directory:**
+
 ```powershell
 iex "& { $(irm https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/windows.ps1) } -InstallDir 'C:\tools'"
 ```
@@ -42,11 +45,13 @@ iex "& { $(irm https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/wi
 ## Unix/Linux/macOS Advanced Options
 
 **Force install without prompts:**
+
 ```bash
 FORCE_INSTALL=true bash -c "$(curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh)"
 ```
 
 **Disable auto-install when using pipe:**
+
 ```bash
 FORCE_INSTALL=false bash -c "$(curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh)"
 ```
@@ -54,16 +59,19 @@ FORCE_INSTALL=false bash -c "$(curl -sSL https://raw.githubusercontent.com/Gu1ll
 ### Manual Install
 
 1. Download the script:
+
 ```bash
 curl -O https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh
 ```
 
 2. Make it executable:
+
 ```bash
 chmod +x unix.sh
 ```
 
 3. Run the installer:
+
 ```bash
 ./unix.sh
 ```
