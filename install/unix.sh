@@ -49,6 +49,11 @@ setSystem() {
     if [ "$OS" = "darwin" ]; then
         USE_SUDO="true"
     fi
+
+    # Only try to use sudo if it exists
+    if ! [[ -n "$(command -v sudo)" ]]; then
+        USE_SUDO="false"
+    fi
 }
 
 runAsRoot() {
