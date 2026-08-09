@@ -1,6 +1,6 @@
 #!/bin/bash
 
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 EXECUTABLE_NAME=sshm
 EXECUTABLE_PATH="$INSTALL_DIR/$EXECUTABLE_NAME"
 USE_SUDO="false"
