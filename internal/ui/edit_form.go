@@ -284,7 +284,7 @@ func (m *editFormModel) getFirstPropertyForTab(tab int) int {
 func (m *editFormModel) handleEditNavigation(key string) tea.Cmd {
 	if m.focusArea == focusAreaHosts {
 		// Navigate in hosts area
-		if key == "up" || key == "shift+tab" {
+		if key == "up" || key == "shift+tab" || key == "ctrl+p" {
 			m.focused--
 		} else {
 			m.focused++
@@ -317,7 +317,7 @@ func (m *editFormModel) handleEditNavigation(key string) tea.Cmd {
 		}
 
 		// Navigate within current tab
-		if key == "up" || key == "shift+tab" {
+		if key == "up" || key == "shift+tab" || key == "ctrl+p" {
 			currentPos--
 		} else {
 			currentPos++
@@ -443,7 +443,7 @@ func (m *editFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.updateFocus()
 
-		case "tab", "shift+tab", "enter", "up", "down":
+		case "tab", "shift+tab", "enter", "up", "down", "ctrl+p", "ctrl+n":
 			return m, m.handleEditNavigation(msg.String())
 
 		case "ctrl+a":

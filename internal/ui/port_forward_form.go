@@ -124,7 +124,7 @@ func (m *portForwardModel) Update(msg tea.Msg) (*portForwardModel, tea.Cmd) {
 				return m, m.submitForm()
 			}
 
-		case "shift+tab", "up":
+		case "shift+tab", "up", "ctrl+p":
 			prevField := m.getPrevValidField(m.focused)
 			if prevField != -1 {
 				m.inputs[m.focused].Blur()
@@ -133,7 +133,7 @@ func (m *portForwardModel) Update(msg tea.Msg) (*portForwardModel, tea.Cmd) {
 				return m, textinput.Blink
 			}
 
-		case "tab", "down":
+		case "tab", "down", "ctrl+n":
 			nextField := m.getNextValidField(m.focused)
 			if nextField != -1 {
 				m.inputs[m.focused].Blur()

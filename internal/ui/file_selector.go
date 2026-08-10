@@ -118,12 +118,12 @@ func (m *fileSelectorModel) Update(msg tea.Msg) (*fileSelectorModel, tea.Cmd) {
 				return fileSelectorMsg{selectedFile: selectedFile}
 			}
 
-		case "up", "k":
+		case "up", "k", "ctrl+p":
 			if m.selected > 0 {
 				m.selected--
 			}
 
-		case "down", "j":
+		case "down", "j", "ctrl+n":
 			if m.selected < len(m.files)-1 {
 				m.selected++
 			}
