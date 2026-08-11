@@ -42,17 +42,9 @@ setSystem() {
 
     OS=$(echo `uname`|tr '[:upper:]' '[:lower:]')
     
-    # Determine if we need sudo
-    if [ "$OS" = "linux" ]; then
+    # Use sudo if we're in linux or darwin (macOS) and sudo exists
+    if [[ ( "$OS" = "linux" || "$OS" = "darwin" ) && -n "$(command -v sudo)" ]]; then
         USE_SUDO="true"
-    fi
-    if [ "$OS" = "darwin" ]; then
-        USE_SUDO="true"
-    fi
-
-    # Only try to use sudo if it exists
-    if ! [[ -n "$(command -v sudo)" ]]; then
-        USE_SUDO="false"
     fi
 }
 
