@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewPingManager(t *testing.T) {
-	pm := NewPingManager(5*time.Second, "")
+	pm := NewPingManager(5*time.Second, "", "")
 	if pm == nil {
 		t.Error("NewPingManager() returned nil")
 	}
@@ -19,7 +19,7 @@ func TestNewPingManager(t *testing.T) {
 }
 
 func TestPingManager_PingHost(t *testing.T) {
-	pm := NewPingManager(1*time.Second, "")
+	pm := NewPingManager(1*time.Second, "", "")
 	ctx := context.Background()
 
 	// Test ping method exists and doesn't panic
@@ -38,7 +38,7 @@ func TestPingManager_PingHost(t *testing.T) {
 }
 
 func TestPingManager_GetStatus(t *testing.T) {
-	pm := NewPingManager(1*time.Second, "")
+	pm := NewPingManager(1*time.Second, "", "")
 
 	// Test unknown host
 	status := pm.GetStatus("unknown.host")
@@ -57,7 +57,7 @@ func TestPingManager_GetStatus(t *testing.T) {
 }
 
 func TestPingManager_PingMultipleHosts(t *testing.T) {
-	pm := NewPingManager(1*time.Second, "")
+	pm := NewPingManager(1*time.Second, "", "")
 	hosts := []config.SSHHost{
 		{Name: "localhost", Hostname: "127.0.0.1", Port: "22"},
 		{Name: "invalid", Hostname: "invalid.host.12345", Port: "22"},
@@ -81,7 +81,7 @@ func TestPingManager_PingMultipleHosts(t *testing.T) {
 }
 
 func TestPingManager_GetResult(t *testing.T) {
-	pm := NewPingManager(1*time.Second, "")
+	pm := NewPingManager(1*time.Second, "", "")
 	ctx := context.Background()
 
 	// Test getting result for unknown host
@@ -126,7 +126,7 @@ func TestPingStatus_String(t *testing.T) {
 
 func TestPingHost_Basic(t *testing.T) {
 	// Test that the ping functionality exists
-	pm := NewPingManager(1*time.Second, "")
+	pm := NewPingManager(1*time.Second, "", "")
 	ctx := context.Background()
 	host := config.SSHHost{Name: "test", Hostname: "127.0.0.1", Port: "22"}
 

@@ -349,7 +349,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// Success: execute SSH command with port forwarding
 			if len(msg.sshArgs) > 0 {
-				sshCmd := exec.Command("ssh", msg.sshArgs...)
+				sshCmd := exec.Command(m.appConfig.GetSSHCommand(), msg.sshArgs...)
 
 				// Record the connection in history
 				if m.historyManager != nil && m.portForwardForm != nil {
@@ -570,10 +570,11 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				// Build the SSH command with the appropriate config file
 				var sshCmd *exec.Cmd
+				sshCommand := m.appConfig.GetSSHCommand()
 				if m.configFile != "" {
-					sshCmd = exec.Command("ssh", "-F", m.configFile, hostName)
+					sshCmd = exec.Command(sshCommand, "-F", m.configFile, hostName)
 				} else {
-					sshCmd = exec.Command("ssh", hostName)
+					sshCmd = exec.Command(sshCommand, hostName)
 				}
 
 				return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {

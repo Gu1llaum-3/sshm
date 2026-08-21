@@ -20,6 +20,11 @@ type KeyBindings struct {
 type AppConfig struct {
 	CheckForUpdates *bool       `json:"check_for_updates,omitempty"`
 	KeyBindings     KeyBindings `json:"key_bindings"`
+
+	// SSHCommand overrides the SSH binary/command used to connect to hosts.
+	// Can be a bare command name (resolved via PATH) or an absolute path.
+	// Defaults to "ssh" when empty.
+	SSHCommand string `json:"ssh_command,omitempty"`
 }
 
 // IsUpdateCheckEnabled returns true if the update check is enabled (default: true)
@@ -28,6 +33,14 @@ func (c *AppConfig) IsUpdateCheckEnabled() bool {
 		return true
 	}
 	return *c.CheckForUpdates
+}
+
+// GetSSHCommand returns the configured SSH command/binary, defaulting to "ssh"
+func (c *AppConfig) GetSSHCommand() string {
+	if c == nil || c.SSHCommand == "" {
+		return "ssh"
+	}
+	return c.SSHCommand
 }
 
 // GetDefaultKeyBindings returns the default key bindings configuration

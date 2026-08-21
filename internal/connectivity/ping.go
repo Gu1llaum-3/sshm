@@ -52,14 +52,19 @@ type PingManager struct {
 	mutex      sync.RWMutex
 	timeout    time.Duration
 	configFile string
+	sshCommand string
 }
 
 // NewPingManager creates a new ping manager with the specified timeout
-func NewPingManager(timeout time.Duration, configFile string) *PingManager {
+func NewPingManager(timeout time.Duration, configFile string, sshCommand string) *PingManager {
+	if sshCommand == "" {
+		sshCommand = "ssh"
+	}
 	return &PingManager{
 		results:    make(map[string]*HostPingResult),
 		timeout:    timeout,
 		configFile: configFile,
+		sshCommand: sshCommand,
 	}
 }
 
@@ -196,7 +201,7 @@ func (pm *PingManager) pingWithExternalCommand(ctx context.Context, host config.
 
 	// Create command with context for timeout cancellation
 	// Note: We used pm.timeout for the ssh command option, but we also respect the context deadline
-	cmd := exec.CommandContext(ctx, "ssh", args...)
+	cmd := exec.CommandContext(ctx, pm.sshCommand, args...)
 
 	// Run the command
 	err := cmd.Run()

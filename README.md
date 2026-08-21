@@ -693,6 +693,7 @@ SSHM supports a configuration file to customize its behavior, including key bind
 ```json
 {
   "check_for_updates": false,
+  "ssh_command": "/usr/local/bin/ssh",
   "key_bindings": {
     "quit_keys": ["q", "ctrl+c"],
     "disable_esc_quit": true
@@ -702,6 +703,7 @@ SSHM supports a configuration file to customize its behavior, including key bind
 
 **Available Options:**
 - **check_for_updates**: Boolean to enable or disable the automatic update check at startup. Default: `true`. Set to `false` on air-gapped or offline machines to avoid connection delays.
+- **ssh_command**: Custom SSH command or binary path used to connect to hosts (interactive TUI, port forwarding, direct CLI connect, and connectivity checks). Default: `ssh` (resolved via `PATH`). Useful to point to a wrapper script or an alternate SSH client.
 - **quit_keys**: Array of keys that will quit the application. Default: `["q", "ctrl+c"]`
 - **disable_esc_quit**: Boolean flag to disable ESC key from quitting the application. Default: `false`
 
