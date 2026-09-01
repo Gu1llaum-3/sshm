@@ -696,7 +696,8 @@ SSHM supports a configuration file to customize its behavior, including key bind
   "key_bindings": {
     "quit_keys": ["q", "ctrl+c"],
     "disable_esc_quit": true
-  }
+  },
+  "ssh_command": ["ssh"]
 }
 ```
 
@@ -704,6 +705,12 @@ SSHM supports a configuration file to customize its behavior, including key bind
 - **check_for_updates**: Boolean to enable or disable the automatic update check at startup. Default: `true`. Set to `false` on air-gapped or offline machines to avoid connection delays.
 - **quit_keys**: Array of keys that will quit the application. Default: `["q", "ctrl+c"]`
 - **disable_esc_quit**: Boolean flag to disable ESC key from quitting the application. Default: `false`
+- **ssh_command**: Array of strings used as the command (and arguments) to launch SSH sessions, in place of the default `ssh` binary. Must be a non-empty list of non-empty strings. Default: `["ssh"]`. Useful for wrapping the connection with tools like `mosh` or `eternal-terminal`:
+  ```json
+  {
+    "ssh_command": ["eternal-terminal"]
+  }
+  ```
 
 **For Vim Users:**
 If you frequently press ESC accidentally causing the application to quit, set `disable_esc_quit` to `true`. This will disable ESC as a quit key while preserving all other functionality.

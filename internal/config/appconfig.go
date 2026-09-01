@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // KeyBindings represents configurable key bindings for the application
@@ -20,6 +22,10 @@ type KeyBindings struct {
 type AppConfig struct {
 	CheckForUpdates *bool       `json:"check_for_updates,omitempty"`
 	KeyBindings     KeyBindings `json:"key_bindings"`
+
+	// SSHCommand is the argv prefix used to launch SSH sessions (e.g. ["ssh"] or
+	// ["mosh"]). Defaults to ["ssh"] when absent or invalid.
+	SSHCommand []string `json:"ssh_command,omitempty"`
 }
 
 // IsUpdateCheckEnabled returns true if the update check is enabled (default: true)
@@ -38,11 +44,26 @@ func GetDefaultKeyBindings() KeyBindings {
 	}
 }
 
+// GetDefaultSSHCommand returns the default argv prefix used to launch SSH sessions
+func GetDefaultSSHCommand() []string {
+	return []string{"ssh"}
+}
+
 // GetDefaultAppConfig returns the default application configuration
 func GetDefaultAppConfig() AppConfig {
 	return AppConfig{
 		KeyBindings: GetDefaultKeyBindings(),
+		SSHCommand:  GetDefaultSSHCommand(),
 	}
+}
+
+// GetSSHCommand returns the configured SSH launcher command, defaulting to ["ssh"]
+// if unset. This is safe to call even if the config wasn't loaded via LoadAppConfig.
+func (c *AppConfig) GetSSHCommand() []string {
+	if c == nil || len(c.SSHCommand) == 0 {
+		return GetDefaultSSHCommand()
+	}
+	return c.SSHCommand
 }
 
 // GetAppConfigPath returns the path to the application config file
@@ -134,7 +155,58 @@ func mergeWithDefaults(config AppConfig) AppConfig {
 		config.KeyBindings.QuitKeys = defaults.KeyBindings.QuitKeys
 	}
 
+	config.SSHCommand = validateSSHCommand(config.SSHCommand)
+
 	return config
+}
+
+// validateSSHCommand ensures ssh_command is a non-empty list of non-empty strings.
+// A missing field (nil) silently defaults to ["ssh"]. A field that was explicitly
+// set but is invalid (empty list, or containing blank entries) also falls back to
+// ["ssh"], but prints a warning since that likely indicates a config mistake.
+func validateSSHCommand(cmd []string) []string {
+	if cmd == nil {
+		return GetDefaultSSHCommand()
+	}
+
+	if len(cmd) == 0 {
+		fmt.Fprintln(os.Stderr, "Warning: ssh_command is empty in config, falling back to default [\"ssh\"]")
+		return GetDefaultSSHCommand()
+	}
+
+	for _, part := range cmd {
+		if strings.TrimSpace(part) == "" {
+			fmt.Fprintln(os.Stderr, "Warning: ssh_command contains an empty entry in config, falling back to default [\"ssh\"]")
+			return GetDefaultSSHCommand()
+		}
+	}
+
+	return cmd
+}
+
+// BuildSSHArgv builds the full exec argv (launcher command followed by SSH flags,
+// the host name, and any remote command) used to launch an SSH session.
+func BuildSSHArgv(sshCommand []string, configFile string, forceTTY bool, hostName string, remoteCommand []string) []string {
+	launcher := sshCommand
+	if len(launcher) == 0 {
+		launcher = GetDefaultSSHCommand()
+	}
+
+	argv := make([]string, 0, len(launcher)+len(remoteCommand)+4)
+	argv = append(argv, launcher...)
+
+	if configFile != "" {
+		argv = append(argv, "-F", configFile)
+	}
+
+	if forceTTY {
+		argv = append(argv, "-t")
+	}
+
+	argv = append(argv, hostName)
+	argv = append(argv, remoteCommand...)
+
+	return argv
 }
 
 // ShouldQuitOnKey checks if the given key should trigger quit based on configuration

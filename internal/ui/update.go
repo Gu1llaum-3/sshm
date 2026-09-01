@@ -568,13 +568,9 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 
-				// Build the SSH command with the appropriate config file
-				var sshCmd *exec.Cmd
-				if m.configFile != "" {
-					sshCmd = exec.Command("ssh", "-F", m.configFile, hostName)
-				} else {
-					sshCmd = exec.Command("ssh", hostName)
-				}
+				// Build the SSH command with the configured launcher and config file
+				argv := config.BuildSSHArgv(m.appConfig.GetSSHCommand(), m.configFile, false, hostName, nil)
+				sshCmd := exec.Command(argv[0], argv[1:]...)
 
 				return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {
 					return tea.Quit()
