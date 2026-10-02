@@ -561,10 +561,10 @@ SSHM works directly with your standard SSH configuration file (`~/.ssh/config`).
 Besides per-host `# Tags:`, SSHM recognizes a `# FileTags:` directive placed in the header of a config file. Every host defined in that file inherits those tags automatically — useful when a whole file groups hosts that share an attribute (a project, an environment, a region).
 
 **Rules:**
-- Must appear **before the first `Host` or `Include`** in the file. Later occurrences are ignored.
+- The directive name is case-insensitive and must appear **before the first `Host` or `Include`** in the file. Later occurrences are ignored. When deleting or moving a host would promote an ignored directive into the header, SSHM preserves it as a disabled comment.
 - **Strictly local to the file** — inherited tags do NOT cascade across `Include` boundaries.
 - Multiple `# FileTags:` lines in the header accumulate (union).
-- The union with a host's own `# Tags:` is deduplicated. Inherited tags participate in search, filtering, and autocompletion just like own tags.
+- The union with a host's own `# Tags:` is deduplicated. Inherited tags participate in search and filtering just like own tags. Shell autocompletion suggests host names and excludes hosts tagged `hidden`, including through inherited tags.
 - Inherited tags are **read-only** in the edit form: you cannot remove them from an individual host — edit the `# FileTags:` directive directly if you want to change them.
 - The special `hidden` tag works at the file level too: `# FileTags: hidden` hides every host in that file from the TUI and `sshm search` (they remain connectable via `sshm <host>`).
 

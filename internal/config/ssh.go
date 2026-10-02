@@ -288,12 +288,12 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 		}
 
 		// File-level tags: header-only directive
-		if strings.HasPrefix(line, "# FileTags:") {
+		if strings.HasPrefix(strings.ToLower(line), "# filetags:") {
 			if headerClosed {
-				fmt.Fprintf(os.Stderr, "warning: `# FileTags:` after first Host in %s:%d ignored\n", configPath, lineNumber)
+				fmt.Fprintf(os.Stderr, "warning: `# FileTags:` after first Host or Include in %s:%d ignored\n", configPath, lineNumber)
 				continue
 			}
-			tagsStr := strings.TrimSpace(strings.TrimPrefix(line, "# FileTags:"))
+			tagsStr := strings.TrimSpace(line[len("# FileTags:"):])
 			if tagsStr != "" {
 				seen := make(map[string]struct{}, len(fileTags))
 				for _, t := range fileTags {
@@ -1666,6 +1666,9 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 		return fmt.Errorf("host '%s' not found", hostName)
 	}
 
+	// Keep previously ignored directives from becoming active after deletion.
+	preserveFileTagsScope(lines, newLines)
+
 	// Write back to file
 	newContent := strings.Join(newLines, "\n")
 	return os.WriteFile(configPath, []byte(newContent), 0600)
@@ -2086,4 +2089,30 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 	// Write back to file
 	newContent := strings.Join(newLines, "\n")
 	return os.WriteFile(configPath, []byte(newContent), 0600)
+}
+
+// preserveFileTagsScope disables directives promoted into the header by deletion.
+// Deletion preserves the original header, so its directives are the first ones
+// in the new header; any additional directives were previously ignored.
+func preserveFileTagsScope(original, updated []string) {
+	active := 0
+	for pass, lines := range [][]string{original, updated} {
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 && (strings.EqualFold(fields[0], "Host") || strings.EqualFold(fields[0], "Include")) {
+				break
+			}
+			if !strings.HasPrefix(strings.ToLower(trimmed), "# filetags:") {
+				continue
+			}
+			if pass == 0 {
+				active++
+			} else if active > 0 {
+				active--
+			} else {
+				lines[i] = "# Ignored outside original file header: " + trimmed
+			}
+		}
+	}
 }
