@@ -265,6 +265,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.allHosts = hosts
+			m.clearEmptySourceFileFilter()
 			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
@@ -532,6 +533,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.allHosts = hosts
+			m.clearEmptySourceFileFilter()
 			m.rebuildFilteredHosts()
 
 			m.updateTableRows()

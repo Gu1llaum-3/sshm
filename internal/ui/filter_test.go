@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Gu1llaum-3/sshm/internal/config"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestApplySourceFileFilter(t *testing.T) {
@@ -66,5 +70,174 @@ func TestFileSelectorWithAllPrependsSynthetic(t *testing.T) {
 	}
 	if m.displayNames[0] != "[All files]" {
 		t.Fatalf("expected display name '[All files]', got %q", m.displayNames[0])
+	}
+}
+
+func TestSelectSourceFileWithNoVisibleHosts(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{"include-and-wildcard-only", "Include other.conf\nHost *\n  User default\n"},
+		{"all-hosts-hidden", "Include other.conf\n# Tags: hidden\nHost secret\n  HostName secret.example.com\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			selected := filepath.Join(dir, "config")
+			for path, data := range map[string]string{
+				selected:                         tc.content,
+				filepath.Join(dir, "other.conf"): "Host other\n  HostName other.example.com\n",
+			} {
+				if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			hosts, err := config.ParseSSHConfigFile(selected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := createTestModel()
+			m.allHosts = hosts
+			m.fileSelectorPurpose = purposeFilterHosts
+			updated, _ := m.Update(fileSelectorMsg{selectedFile: selected})
+			m = updated.(Model)
+			if m.selectedSourceFile != selected {
+				t.Errorf("filter = %q, want %q", m.selectedSourceFile, selected)
+			}
+			if len(m.filteredHosts) != 0 || len(m.table.Rows()) != 0 {
+				t.Errorf("expected empty list, got %+v", m.filteredHosts)
+			}
+			if !strings.Contains(m.View(), "filtering by") || !strings.Contains(m.View(), "config") {
+				t.Error("missing active file banner")
+			}
+			updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+			m = updated.(Model)
+			if m.selectedSourceFile != "" || len(m.filteredHosts) != 1 || m.filteredHosts[0].Name != "other" {
+				t.Fatalf("clearing empty filter: got %q, %+v", m.selectedSourceFile, m.filteredHosts)
+			}
+		})
+	}
+}
+
+func TestSourceFileFilterSurvivesHiddenToggle(t *testing.T) {
+	m := createTestModel()
+	m.allHosts = []config.SSHHost{
+		{Name: "other", SourceFile: "/x/main"},
+		{Name: "secret", SourceFile: "/x/hidden.conf", Tags: []string{"hidden"}},
+	}
+	toggle := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")}
+	updated, _ := m.Update(toggle)
+	m = updated.(Model)
+	m.fileSelectorPurpose = purposeFilterHosts
+	updated, _ = m.Update(fileSelectorMsg{selectedFile: "/x/hidden.conf"})
+	m = updated.(Model)
+	if len(m.filteredHosts) != 1 || m.filteredHosts[0].Name != "secret" {
+		t.Fatalf("initial filter: %+v", m.filteredHosts)
+	}
+	for _, wantCount := range []int{0, 1} {
+		updated, _ = m.Update(toggle)
+		m = updated.(Model)
+		if m.selectedSourceFile != "/x/hidden.conf" {
+			t.Errorf("filter lost after H: %q", m.selectedSourceFile)
+		}
+		if len(m.filteredHosts) != wantCount || len(m.table.Rows()) != wantCount {
+			t.Fatalf("after H: want %d hosts, got %+v", wantCount, m.filteredHosts)
+		}
+		if wantCount == 1 && m.filteredHosts[0].Name != "secret" {
+			t.Fatalf("unexpected host: %+v", m.filteredHosts)
+		}
+	}
+}
+
+func TestSourceFileFilterAfterDeleteOrMove(t *testing.T) {
+	for _, action := range []string{"delete", "move"} {
+		for _, remaining := range []bool{false, true} {
+			name := action + "/last-host"
+			if remaining {
+				name = action + "/hosts-remain"
+			}
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				t.Setenv("XDG_CONFIG_HOME", dir)
+				t.Setenv("APPDATA", dir)
+				main := filepath.Join(dir, "config")
+				selected := filepath.Join(dir, "selected.conf")
+				content := "Host target\n  HostName target.example.com\n"
+				if remaining {
+					content += "Host remaining\n  HostName remaining.example.com\n"
+				}
+				for path, data := range map[string]string{
+					main:     "Include selected.conf\nHost other\n  HostName other.example.com\n",
+					selected: content,
+				} {
+					if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				hosts, err := config.ParseSSHConfigFile(main)
+				if err != nil {
+					t.Fatal(err)
+				}
+				m := createTestModel()
+				m.configFile = main
+				m.allHosts = hosts
+				m.selectedSourceFile = selected
+				m.searchInput.SetValue("target")
+				m.rebuildFilteredHosts()
+				m.updateTableRows()
+				if len(m.filteredHosts) != 1 {
+					t.Fatalf("expected target before removal: %+v", m.filteredHosts)
+				}
+				var updated tea.Model
+				if action == "delete" {
+					updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+					m = updated.(Model)
+					updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				} else {
+					// The move form writes the files before emitting its success message.
+					if err := config.DeleteSSHHostWithLine(m.filteredHosts[0]); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.OpenFile(main, os.O_APPEND|os.O_WRONLY, 0600)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, err = f.WriteString("Host target\n  HostName target.example.com\n")
+					closeErr := f.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if closeErr != nil {
+						t.Fatal(closeErr)
+					}
+					updated, _ = m.Update(moveFormSubmitMsg{})
+				}
+				m = updated.(Model)
+				wantFilter := ""
+				if remaining {
+					wantFilter = selected
+				}
+				if m.selectedSourceFile != wantFilter {
+					t.Fatalf("filter = %q, want %q", m.selectedSourceFile, wantFilter)
+				}
+				// Search must not determine whether the file filter is cleared.
+				if m.searchInput.Value() != "target" {
+					t.Fatal("search was lost")
+				}
+				m.searchInput.SetValue("")
+				m.rebuildFilteredHosts()
+				m.updateTableRows()
+				wantCount := 1
+				if action == "move" && !remaining {
+					wantCount = 2
+				}
+				if len(m.filteredHosts) != wantCount {
+					t.Fatalf("want %d hosts, got %+v", wantCount, m.filteredHosts)
+				}
+				if remaining && m.filteredHosts[0].Name != "remaining" {
+					t.Fatalf("unexpected remaining hosts: %+v", m.filteredHosts)
+				}
+			})
+		}
 	}
 }
