@@ -106,12 +106,13 @@ Examples:
 func runInteractiveMode() {
 	// Parse SSH configurations
 	var hosts []config.SSHHost
+	var warnings []string
 	var err error
 
 	if configFile != "" {
-		hosts, err = config.ParseSSHConfigFile(configFile)
+		hosts, warnings, err = config.ParseSSHConfigFileWithWarnings(configFile)
 	} else {
-		hosts, err = config.ParseSSHConfig()
+		hosts, warnings, err = config.ParseSSHConfigWithWarnings()
 	}
 
 	if err != nil {
@@ -130,9 +131,9 @@ func runInteractiveMode() {
 			}
 			// After adding, try to reload hosts and continue if any exist
 			if configFile != "" {
-				hosts, err = config.ParseSSHConfigFile(configFile)
+				hosts, warnings, err = config.ParseSSHConfigFileWithWarnings(configFile)
 			} else {
-				hosts, err = config.ParseSSHConfig()
+				hosts, warnings, err = config.ParseSSHConfigWithWarnings()
 			}
 			if err != nil || len(hosts) == 0 {
 				fmt.Println("No hosts available, exiting.")
@@ -145,7 +146,7 @@ func runInteractiveMode() {
 	}
 
 	// Run the interactive TUI
-	if err := ui.RunInteractiveMode(hosts, configFile, searchMode, AppVersion, noUpdateCheck); err != nil {
+	if err := ui.RunInteractiveMode(hosts, configFile, searchMode, AppVersion, noUpdateCheck, warnings...); err != nil {
 		log.Fatalf("Error running interactive mode: %v", err)
 	}
 }

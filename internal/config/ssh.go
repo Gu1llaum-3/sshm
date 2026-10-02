@@ -222,11 +222,43 @@ func ParseSSHConfig() ([]SSHHost, error) {
 
 // ParseSSHConfigFile parses a specific SSH config file and returns the list of hosts
 func ParseSSHConfigFile(configPath string) ([]SSHHost, error) {
-	return parseSSHConfigFileWithProcessedFiles(configPath, make(map[string]bool))
+	hosts, _, err := ParseSSHConfigFileWithWarnings(configPath)
+	return hosts, err
+}
+
+// ParseSSHConfigWithWarnings parses the default config and returns non-fatal
+// diagnostics separately. Parsing never writes to the terminal.
+func ParseSSHConfigWithWarnings() ([]SSHHost, []string, error) {
+	path, err := GetDefaultSSHConfigPath()
+	if err != nil {
+		return nil, nil, err
+	}
+	return ParseSSHConfigFileWithWarnings(path)
+}
+
+// ParseSSHConfigFileWithWarnings includes diagnostics from included files.
+// Each directive is reported once per parsed file, even with repeated Includes.
+func ParseSSHConfigFileWithWarnings(path string) ([]SSHHost, []string, error) {
+	var warnings []string
+	hosts, err := parseSSHConfigFileWithProcessedFiles(path, make(map[string]bool), &warnings)
+	return hosts, warnings, err
+}
+
+// fileTagsDirective recognizes the directive without changing tag value case.
+func fileTagsDirective(line string) (string, bool) {
+	if !strings.HasPrefix(line, "#") {
+		return "", false
+	}
+	comment := strings.TrimSpace(line[1:])
+	const prefix = "filetags:"
+	if len(comment) < len(prefix) || !strings.EqualFold(comment[:len(prefix)], prefix) {
+		return "", false
+	}
+	return strings.TrimSpace(comment[len(prefix):]), true
 }
 
 // parseSSHConfigFileWithProcessedFiles parses SSH config with include support
-func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[string]bool) ([]SSHHost, error) {
+func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[string]bool, warnings *[]string) ([]SSHHost, error) {
 	// Resolve absolute path to prevent infinite recursion
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
@@ -288,12 +320,13 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 		}
 
 		// File-level tags: header-only directive
-		if strings.HasPrefix(strings.ToLower(line), "# filetags:") {
+		if tagsStr, ok := fileTagsDirective(line); ok {
 			if headerClosed {
-				fmt.Fprintf(os.Stderr, "warning: `# FileTags:` after first Host or Include in %s:%d ignored\n", configPath, lineNumber)
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("# FileTags: ignored after first Host or Include (%s:%d)", configPath, lineNumber))
+				}
 				continue
 			}
-			tagsStr := strings.TrimSpace(line[len("# FileTags:"):])
 			if tagsStr != "" {
 				seen := make(map[string]struct{}, len(fileTags))
 				for _, t := range fileTags {
@@ -348,7 +381,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 		case "include":
 			headerClosed = true
 			// Handle Include directive
-			includeHosts, err := processIncludeDirective(value, configPath, processedFiles)
+			includeHosts, err := processIncludeDirective(value, configPath, processedFiles, warnings)
 			if err != nil {
 				// Don't fail the entire parse if include fails, just skip it
 				continue
@@ -476,7 +509,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 }
 
 // processIncludeDirective processes an Include directive and returns hosts from included files
-func processIncludeDirective(pattern string, baseConfigPath string, processedFiles map[string]bool) ([]SSHHost, error) {
+func processIncludeDirective(pattern string, baseConfigPath string, processedFiles map[string]bool, warnings *[]string) ([]SSHHost, error) {
 	// Expand tilde to home directory
 	if strings.HasPrefix(pattern, "~") {
 		homeDir, err := getHomeDir()
@@ -521,7 +554,7 @@ func processIncludeDirective(pattern string, baseConfigPath string, processedFil
 		}
 
 		// Recursively parse the included file
-		hosts, err := parseSSHConfigFileWithProcessedFiles(match, processedFiles)
+		hosts, err := parseSSHConfigFileWithProcessedFiles(match, processedFiles, warnings)
 		if err != nil {
 			// Skip files that can't be parsed rather than failing completely
 			continue
@@ -1698,7 +1731,7 @@ func GetAllConfigFiles() ([]string, error) {
 	}
 
 	processedFiles := make(map[string]bool)
-	_, _ = parseSSHConfigFileWithProcessedFiles(configPath, processedFiles)
+	_, _ = parseSSHConfigFileWithProcessedFiles(configPath, processedFiles, nil)
 
 	files := make([]string, 0, len(processedFiles))
 	for file := range processedFiles {
@@ -1738,7 +1771,7 @@ func GetAllConfigFilesFromBase(baseConfigPath string) ([]string, error) {
 	}
 
 	processedFiles := make(map[string]bool)
-	_, _ = parseSSHConfigFileWithProcessedFiles(baseConfigPath, processedFiles)
+	_, _ = parseSSHConfigFileWithProcessedFiles(baseConfigPath, processedFiles, nil)
 
 	files := make([]string, 0, len(processedFiles))
 	for file := range processedFiles {
@@ -2103,7 +2136,7 @@ func preserveFileTagsScope(original, updated []string) {
 			if len(fields) >= 2 && (strings.EqualFold(fields[0], "Host") || strings.EqualFold(fields[0], "Include")) {
 				break
 			}
-			if !strings.HasPrefix(strings.ToLower(trimmed), "# filetags:") {
+			if _, ok := fileTagsDirective(trimmed); !ok {
 				continue
 			}
 			if pass == 0 {

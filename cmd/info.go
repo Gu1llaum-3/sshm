@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -97,12 +98,19 @@ func runInfo(out io.Writer, hostnameArg string, cfgFile string, pretty bool) int
 	}
 
 	var host *config.SSHHost
-	var err error
-	if cfgFile != "" {
-		host, err = config.GetSSHHostFromFile(hostnameArg, cfgFile)
-	} else {
-		host, err = config.GetSSHHost(hostnameArg)
+	hosts, err := parseConfigForCLI(cfgFile, os.Stderr)
+	if err == nil {
+		for i := range hosts {
+			if hosts[i].Name == hostnameArg {
+				host = &hosts[i]
+				break
+			}
+		}
+		if host == nil {
+			err = fmt.Errorf("host '%s' not found", hostnameArg)
+		}
 	}
+
 	if err != nil {
 		code := 1
 		errCode := "CONFIG_ERROR"

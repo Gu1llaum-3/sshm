@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // View renders the complete user interface
@@ -92,6 +93,12 @@ func (m Model) renderListView() string {
 			Foreground(lipgloss.Color("11")).
 			Bold(true)
 		components = append(components, hiddenBannerStyle.Render("  [showing hidden hosts — press H to hide]"))
+	}
+
+	// Keep parser warnings within Bubble Tea's render cycle on one status line.
+	if len(m.configWarnings) > 0 {
+		status := "⚠ " + strings.Join(m.configWarnings, " • ")
+		components = append(components, m.styles.HelpText.Render(ansi.Truncate(status, max(1, m.width-4), "…")))
 	}
 
 	// Add the search bar with the appropriate style based on focus

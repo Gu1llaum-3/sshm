@@ -96,3 +96,58 @@ func TestCompletionHonorsInheritedHiddenTag(t *testing.T) {
 		t.Fatalf("hidden host lookup: exists=%v, err=%v", exists, err)
 	}
 }
+
+func TestCLIWarningsOnceAndSeparateFromJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	child := filepath.Join(dir, "child")
+	for name, content := range map[string]string{
+		path:  "Include child\nInclude child\n",
+		child: "Host database\n HostName db.example.com\n#FileTags: hidden\n",
+	} {
+		if err := os.WriteFile(name, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, command := range []string{"search", "info"} {
+		t.Run(command, func(t *testing.T) {
+			stdout, err := os.CreateTemp(t.TempDir(), "stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stdout.Close()
+			stderr, err := os.CreateTemp(t.TempDir(), "stderr")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stderr.Close()
+			oldOut, oldErr := os.Stdout, os.Stderr
+			oldConfig, oldFormat, oldTagsOnly, oldNamesOnly := configFile, outputFormat, tagsOnly, namesOnly
+			os.Stdout, os.Stderr = stdout, stderr
+			configFile, outputFormat, tagsOnly, namesOnly = path, "json", false, false
+			defer func() {
+				os.Stdout, os.Stderr = oldOut, oldErr
+				configFile, outputFormat, tagsOnly, namesOnly = oldConfig, oldFormat, oldTagsOnly, oldNamesOnly
+			}()
+			if command == "search" {
+				runSearch(searchCmd, nil)
+			} else if code := runInfo(stdout, "database", path, false); code != 0 {
+				t.Fatalf("info exited %d", code)
+			}
+			data, err := os.ReadFile(stdout.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !json.Valid(data) || !strings.Contains(string(data), "database") {
+				t.Fatalf("invalid JSON: %s", data)
+			}
+			diagnostic, err := os.ReadFile(stderr.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Count(string(diagnostic), "warning:") != 1 || !strings.Contains(string(diagnostic), child+":3") {
+				t.Fatalf("warnings: %s", diagnostic)
+			}
+		})
+	}
+}

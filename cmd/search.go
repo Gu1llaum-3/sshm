@@ -35,15 +35,7 @@ Examples:
 }
 
 func runSearch(cmd *cobra.Command, args []string) {
-	// Parse SSH configurations
-	var hosts []config.SSHHost
-	var err error
-
-	if configFile != "" {
-		hosts, err = config.ParseSSHConfigFile(configFile)
-	} else {
-		hosts, err = config.ParseSSHConfig()
-	}
+	hosts, err := parseConfigForCLI(configFile, cmd.ErrOrStderr())
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading SSH config file: %v\n", err)

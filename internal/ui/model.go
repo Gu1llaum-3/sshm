@@ -105,6 +105,9 @@ type Model struct {
 	styles Styles
 	ready  bool
 
+	// Non-fatal parser diagnostics, rendered inside the TUI.
+	configWarnings []string
+
 	// Error handling
 	errorMessage string
 	showingError bool

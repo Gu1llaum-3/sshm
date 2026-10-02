@@ -9,7 +9,7 @@ import (
 )
 
 func TestFileTagsCaseInsensitive(t *testing.T) {
-	for _, directive := range []string{"# FileTags:", "# filetags:", "# FILETAGS:"} {
+	for _, directive := range []string{"# FileTags:", "# filetags:", "# FILETAGS:", "#FileTags:", "#  fIlEtAgS:", "#\tFileTags:"} {
 		t.Run(directive, func(t *testing.T) {
 			p := writeTempConfig(t, directive+" hidden\nHost h\n HostName h.example\n")
 			hosts, err := ParseSSHConfigFile(p)
@@ -26,7 +26,7 @@ func TestFileTagsCaseInsensitive(t *testing.T) {
 func TestFileTagsLateDirectiveAfterDelete(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("APPDATA", t.TempDir())
-	p := writeTempConfig(t, "Host first\n HostName first.example\n\n# FileTags: hidden\nHost second\n HostName second.example\n")
+	p := writeTempConfig(t, "Host first\n HostName first.example\n\n#FileTags: hidden\nHost second\n HostName second.example\n")
 	hosts, err := ParseSSHConfigFile(p)
 	if err != nil {
 		t.Fatal(err)
@@ -162,5 +162,58 @@ func TestFileTagsFollowDestinationOnTransfer(t *testing.T) {
 	}
 	if len(remaining) != 0 {
 		t.Fatalf("source hosts: %+v", remaining)
+	}
+}
+
+func TestFileTagsParserDoesNotWriteStderr(t *testing.T) {
+	p := writeTempConfig(t, "Host first\n HostName f.example\n# FileTags: ignored\n")
+	capture, err := os.CreateTemp(t.TempDir(), "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer capture.Close()
+	original := os.Stderr
+	os.Stderr = capture
+	defer func() { os.Stderr = original }()
+	for i := 0; i < 2; i++ {
+		if _, err := ParseSSHConfigFile(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := capture.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("parser wrote %d bytes to stderr", info.Size())
+	}
+}
+
+func TestFileTagsWarningsIncludeLocationsAndDoNotAccumulate(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "child")
+	parent := filepath.Join(dir, "config")
+	for path, content := range map[string]string{
+		child:  "Host child\n HostName child.example\n#FileTags: hidden\n",
+		parent: "Include child\n#  FILETAGS: hidden\nInclude child\nHost parent\n HostName parent.example\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		hosts, warnings, err := ParseSSHConfigFileWithWarnings(parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(hosts) != 2 || len(FilterVisibleHosts(hosts)) != 2 {
+			t.Fatalf("hosts = %+v", hosts)
+		}
+		if len(warnings) != 2 {
+			t.Fatalf("warnings = %v", warnings)
+		}
+		if !strings.Contains(warnings[0], child+":3") || !strings.Contains(warnings[1], parent+":2") || !strings.Contains(warnings[1], "Host or Include") {
+			t.Fatalf("diagnostics lack location/boundary: %v", warnings)
+		}
 	}
 }

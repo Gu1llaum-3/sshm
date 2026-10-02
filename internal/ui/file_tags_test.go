@@ -9,6 +9,7 @@ import (
 
 	"github.com/Gu1llaum-3/sshm/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestInheritedTagsInTableSearchAndVisibility(t *testing.T) {
@@ -84,5 +85,85 @@ func TestInheritedTagsStayReadOnlyOnEdit(t *testing.T) {
 	}
 	if view := info.View(); !strings.Contains(view, "Inherited") || !strings.Contains(view, "prod") {
 		t.Fatalf("missing inherited info: %s", view)
+	}
+}
+
+func TestConfigWarningsSurviveReloadsWithoutStderr(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("APPDATA", dir)
+	path := filepath.Join(dir, "config")
+	content := "Host first\n HostName first.example.com\n\n#FileTags: ignored\nHost second\n HostName second.example.com\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hosts, warnings, err := config.ParseSSHConfigFileWithWarnings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture, err := os.CreateTemp(dir, "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer capture.Close()
+	original := os.Stderr
+	os.Stderr = capture
+	defer func() { os.Stderr = original }()
+	m := NewModel(hosts, path, false, "", true, warnings...)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m = updated.(Model)
+	if !strings.Contains(m.View(), "FileTags") {
+		t.Fatal("missing startup warning")
+	}
+	for _, msg := range []tea.Msg{addFormSubmitMsg{}, editFormSubmitMsg{}, moveFormSubmitMsg{}} {
+		updated, _ = m.Update(msg)
+		m = updated.(Model)
+		if len(m.configWarnings) != 1 {
+			t.Fatalf("warnings after %T: %v", msg, m.configWarnings)
+		}
+		if !strings.Contains(m.View(), "FileTags") {
+			t.Fatalf("missing warning after %T", msg)
+		}
+	}
+	// The normal delete path also updates diagnostics. Deleting the first host
+	// neutralizes the promoted directive, so the stale warning must disappear.
+	m.deleteMode = true
+	m.deleteHost = &hosts[0]
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if len(m.configWarnings) != 0 || strings.Contains(m.View(), "FileTags") {
+		t.Fatalf("stale warning after delete: %v", m.configWarnings)
+	}
+	if info, err := capture.Stat(); err != nil || info.Size() != 0 {
+		t.Fatalf("unexpected stderr: info=%v, err=%v", info, err)
+	}
+}
+
+func TestConfigWarningsFitOneStatusLine(t *testing.T) {
+	for _, width := range []int{40, 80} {
+		m := createTestModel()
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+		m = updated.(Model)
+		baselineLines := strings.Count(m.View(), "\n")
+		warning := "# FileTags: ignored after first Host or Include (/" + strings.Repeat("directory/", 20) + "config:3)"
+		m.configWarnings = []string{warning, warning}
+		view := m.View()
+		if got := strings.Count(view, "\n"); got != baselineLines+1 {
+			t.Fatalf("width %d: status added %d lines", width, got-baselineLines)
+		}
+		found := false
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "# FileTags:") {
+				found = true
+				// JoinVertical pads every line to the widest existing component.
+				visible := strings.TrimRight(ansi.Strip(line), " ")
+				if ansi.StringWidth(visible) > width {
+					t.Fatalf("width %d: status width %d", width, ansi.StringWidth(visible))
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("width %d: diagnostic was truncated away", width)
+		}
 	}
 }

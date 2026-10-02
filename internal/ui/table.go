@@ -176,6 +176,9 @@ func (m *Model) updateTableHeight() {
 	// - Safety margin: 3 lines (to ensure UI elements are always visible)
 	// Total reserved: 14 lines minimum to preserve essential UI elements
 	reservedHeight := 14
+	if len(m.configWarnings) > 0 {
+		reservedHeight++
+	}
 	availableHeight := m.height - reservedHeight
 	hostCount := len(m.table.Rows())
 
