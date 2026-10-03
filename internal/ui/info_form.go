@@ -95,7 +95,7 @@ func (m *infoFormModel) View() string {
 		{"Hostname/IP", m.host.Hostname},
 		{"User", formatOptionalValue(m.host.User)},
 		{"Port", formatOptionalValue(m.host.Port)},
-		{"Identity File", formatOptionalValue(m.host.Identity)},
+		{"Identity File", formatIdentities(m.host.Identity, m.host.ExtraIdentities)},
 		{"ProxyJump", formatOptionalValue(m.host.ProxyJump)},
 		{"ProxyCommand", formatOptionalValue(m.host.ProxyCommand)},
 		{"SSH Options", formatSSHOptions(m.host.Options)},
@@ -179,6 +179,14 @@ func formatOptionalValue(value string) string {
 		return "Not set"
 	}
 	return value
+}
+
+// formatIdentities lists the main key then the extra ones, one per line
+func formatIdentities(identity string, extra []string) string {
+	if len(extra) == 0 {
+		return formatOptionalValue(identity)
+	}
+	return strings.Join(append([]string{formatOptionalValue(identity)}, extra...), "\n")
 }
 
 func formatSSHOptions(options string) string {

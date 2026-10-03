@@ -25,19 +25,20 @@ func getHomeDir() (string, error) {
 
 // SSHHost represents an SSH host configuration
 type SSHHost struct {
-	Name          string
-	Hostname      string
-	User          string
-	Port          string
-	Identity      string
-	ProxyJump     string
-	ProxyCommand  string
-	Options       string
-	RemoteCommand string // Command to execute after SSH connection
-	RequestTTY    string // Request TTY (yes, no, force, auto)
-	Tags          []string
-	SourceFile    string // Path to the config file where this host is defined
-	LineNumber    int    // Line number in the source file where this host block starts (1-indexed)
+	Name            string
+	Hostname        string
+	User            string
+	Port            string
+	Identity        string
+	ExtraIdentities []string // IdentityFile lines after the first one, in file order
+	ProxyJump       string
+	ProxyCommand    string
+	Options         string
+	RemoteCommand   string // Command to execute after SSH connection
+	RequestTTY      string // Request TTY (yes, no, force, auto)
+	Tags            []string
+	SourceFile      string // Path to the config file where this host is defined
+	LineNumber      int    // Line number in the source file where this host block starts (1-indexed)
 
 	// Temporary field to handle multiple aliases during parsing
 	aliasNames []string `json:"-"` // Do not serialize this field
@@ -252,29 +253,33 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			continue
 		}
 
-		// Ignore other comments
-		if strings.HasPrefix(line, "#") {
+		// Split the line the way OpenSSH does; this also skips other comments
+		parsed, ok := splitConfigLine(line)
+		if !ok || len(parsed.args) == 0 {
 			continue
 		}
 
-		// Split line into words
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
+		key := strings.ToLower(parsed.keyword)
+		// Text after the keyword for directives OpenSSH does not tokenize
+		raw := parsed.rawNoComment
+		if isVerbatimKeyword(key) {
+			raw = parsed.raw
 		}
-
-		key := strings.ToLower(parts[0])
-		value := strings.Join(parts[1:], " ")
+		// sshm stays lenient: a single-value keyword written with several
+		// unquoted words (e.g. a path with spaces) keeps them all
+		value := strings.Join(parsed.args, " ")
 
 		switch key {
 		case "include":
-			// Handle Include directive
-			includeHosts, err := processIncludeDirective(value, configPath, processedFiles)
-			if err != nil {
-				// Don't fail the entire parse if include fails, just skip it
-				continue
+			// Handle Include directive, one glob pattern per argument
+			for _, pattern := range parsed.args {
+				includeHosts, err := processIncludeDirective(pattern, configPath, processedFiles)
+				if err != nil {
+					// Don't fail the entire parse if include fails, just skip it
+					continue
+				}
+				hosts = append(hosts, includeHosts...)
 			}
-			hosts = append(hosts, includeHosts...)
 		case "host":
 			// New host, save previous one if it exists
 			if currentHost != nil {
@@ -291,16 +296,9 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 				}
 			}
 
-			// Parse multiple host names from the Host line
-			hostNames := strings.Fields(value)
-
 			// Skip hosts with wildcards (*, ?) as they are typically patterns, not actual hosts
-			// Also remove surrounding quotes from host names
 			var validHostNames []string
-			for _, hostName := range hostNames {
-				// Remove surrounding double quotes if present
-				hostName = strings.Trim(hostName, `"`)
-
+			for _, hostName := range parsed.args {
 				if !strings.ContainsAny(hostName, "*?") {
 					validHostNames = append(validHostNames, hostName)
 				}
@@ -343,20 +341,26 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 		case "identityfile":
 			if currentHost != nil {
-				// Remove surrounding double quotes if present
-				currentHost.Identity = strings.Trim(value, `"`)
+				// OpenSSH tries every key in order: the first one is the main key
+				if currentHost.Identity == "" {
+					currentHost.Identity = value
+				} else {
+					currentHost.ExtraIdentities = append(currentHost.ExtraIdentities, value)
+				}
 			}
 		case "proxyjump":
 			if currentHost != nil {
-				currentHost.ProxyJump = value
+				// OpenSSH takes ProxyJump raw, quotes included, without its trailing comment
+				currentHost.ProxyJump = raw
 			}
 		case "proxycommand":
 			if currentHost != nil {
-				currentHost.ProxyCommand = value
+				// OpenSSH passes the rest of the line verbatim
+				currentHost.ProxyCommand = raw
 			}
 		case "remotecommand":
 			if currentHost != nil {
-				currentHost.RemoteCommand = value
+				currentHost.RemoteCommand = raw
 			}
 		case "requesttty":
 			if currentHost != nil {
@@ -364,12 +368,13 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 		default:
 			// Handle other SSH options
-			if currentHost != nil && strings.TrimSpace(line) != "" {
-				// Store options in config format (key value), not command format
+			if currentHost != nil {
+				// Store options in config format (key value), not command format,
+				// with their arguments as written so they are written back unchanged
 				if currentHost.Options == "" {
-					currentHost.Options = parts[0] + " " + value
+					currentHost.Options = parsed.keyword + " " + raw
 				} else {
-					currentHost.Options += "\n" + parts[0] + " " + value
+					currentHost.Options += "\n" + parsed.keyword + " " + raw
 				}
 			}
 		}
@@ -537,16 +542,87 @@ func getMainConfigPath() string {
 
 // formatSSHConfigValue formats a value for SSH config file, adding quotes if necessary
 func formatSSHConfigValue(value string) string {
-	if value == "" {
+	if value == "" || !needsQuoting(value) {
 		return value
 	}
 
-	// If the value contains spaces, wrap it in quotes
-	if strings.Contains(value, " ") {
-		return `"` + value + `"`
+	// Inside double quotes the tokenizer still resolves \", \' and \\, so
+	// escape a quote, and a backslash that would be read as an escape
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		switch {
+		case c == '"':
+			b.WriteString(`\"`)
+		case c == '\\' && (i+1 == len(value) || strings.IndexByte(`"'\`, value[i+1]) >= 0):
+			b.WriteString(`\\`)
+		default:
+			b.WriteByte(c)
+		}
 	}
+	b.WriteByte('"')
+	return b.String()
+}
 
-	return value
+// needsQuoting reports whether the tokenizer would split or transform the
+// value if it were written as it is.
+func needsQuoting(value string) bool {
+	if strings.ContainsAny(value, " \t\"'") || value[0] == '#' || value[0] == '=' {
+		return true
+	}
+	for i := 0; i+1 < len(value); i++ {
+		if value[i] == '\\' && value[i+1] == '\\' {
+			return true
+		}
+	}
+	return false
+}
+
+// formatHostNames writes the patterns of a Host line, quoted where needed.
+func formatHostNames(names ...string) string {
+	formatted := make([]string, len(names))
+	for i, name := range names {
+		formatted[i] = formatSSHConfigValue(name)
+	}
+	return strings.Join(formatted, " ")
+}
+
+// hostDirectiveLines returns the indented directive lines of a host block,
+// everything after the Host line, in the order sshm writes them.
+func hostDirectiveLines(host SSHHost) []string {
+	lines := []string{"    HostName " + formatSSHConfigValue(host.Hostname)}
+	if host.User != "" {
+		lines = append(lines, "    User "+formatSSHConfigValue(host.User))
+	}
+	if host.Port != "" && host.Port != "22" {
+		lines = append(lines, "    Port "+host.Port)
+	}
+	if host.Identity != "" {
+		lines = append(lines, "    IdentityFile "+formatSSHConfigValue(host.Identity))
+	}
+	for _, identity := range host.ExtraIdentities {
+		lines = append(lines, "    IdentityFile "+formatSSHConfigValue(identity))
+	}
+	if host.ProxyJump != "" {
+		lines = append(lines, "    ProxyJump "+host.ProxyJump)
+	}
+	if host.ProxyCommand != "" {
+		lines = append(lines, "    ProxyCommand="+host.ProxyCommand)
+	}
+	if host.RemoteCommand != "" {
+		lines = append(lines, "    RemoteCommand "+host.RemoteCommand)
+	}
+	if host.RequestTTY != "" {
+		lines = append(lines, "    RequestTTY "+host.RequestTTY)
+	}
+	for _, option := range strings.Split(host.Options, "\n") {
+		option = strings.TrimSpace(option)
+		if option != "" {
+			lines = append(lines, "    "+option)
+		}
+	}
+	return lines
 }
 
 // AddSSHHost adds a new SSH host to the config file
@@ -601,77 +677,14 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 	}
 
 	// Write host configuration
-	_, err = file.WriteString(fmt.Sprintf("Host %s\n", host.Name))
+	_, err = file.WriteString("Host " + formatHostNames(host.Name) + "\n")
 	if err != nil {
 		return err
 	}
 
-	_, err = file.WriteString(fmt.Sprintf("    HostName %s\n", host.Hostname))
-	if err != nil {
-		return err
-	}
-
-	if host.User != "" {
-		_, err = file.WriteString(fmt.Sprintf("    User %s\n", host.User))
-		if err != nil {
+	for _, line := range hostDirectiveLines(host) {
+		if _, err = file.WriteString(line + "\n"); err != nil {
 			return err
-		}
-	}
-
-	if host.Port != "" && host.Port != "22" {
-		_, err = file.WriteString(fmt.Sprintf("    Port %s\n", host.Port))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.Identity != "" {
-		_, err = file.WriteString(fmt.Sprintf("    IdentityFile %s\n", formatSSHConfigValue(host.Identity)))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.ProxyJump != "" {
-		_, err = file.WriteString(fmt.Sprintf("    ProxyJump %s\n", host.ProxyJump))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.ProxyCommand != "" {
-		_, err = file.WriteString(fmt.Sprintf("    ProxyCommand=%s\n", host.ProxyCommand))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.RemoteCommand != "" {
-		_, err = file.WriteString(fmt.Sprintf("    RemoteCommand %s\n", host.RemoteCommand))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.RequestTTY != "" {
-		_, err = file.WriteString(fmt.Sprintf("    RequestTTY %s\n", host.RequestTTY))
-		if err != nil {
-			return err
-		}
-	}
-
-	// Write SSH options
-	if host.Options != "" {
-		// Split options by newlines and write each one
-		options := strings.Split(host.Options, "\n")
-		for _, option := range options {
-			option = strings.TrimSpace(option)
-			if option != "" {
-				_, err = file.WriteString(fmt.Sprintf("    %s\n", option))
-				if err != nil {
-					return err
-				}
-			}
 		}
 	}
 
@@ -759,6 +772,22 @@ func FormatSSHOptionsForCommand(options string) string {
 	return strings.Join(result, " ")
 }
 
+// hostLineNames returns the host patterns of a Host line, read the way the
+// parser reads them, and false if the line is not a Host line.
+func hostLineNames(line string) ([]string, bool) {
+	parsed, ok := splitConfigLine(line)
+	if !ok || !strings.EqualFold(parsed.keyword, "host") {
+		return nil, false
+	}
+	return parsed.args, true
+}
+
+// isHostLine reports whether the line starts a Host block.
+func isHostLine(line string) bool {
+	_, ok := hostLineNames(line)
+	return ok
+}
+
 // HostExists checks if a host already exists in the config
 func HostExists(hostName string) (bool, error) {
 	hosts, err := ParseSSHConfig()
@@ -796,10 +825,7 @@ func HostExistsInSpecificFile(hostName string, configPath string) (bool, error) 
 		line := strings.TrimSpace(scanner.Text())
 
 		// Check for Host declaration
-		if strings.HasPrefix(strings.ToLower(line), "host ") {
-			// Extract host names (can be multiple hosts on one line)
-			hostPart := strings.TrimSpace(line[5:]) // Remove "host "
-			hostNames := strings.Fields(hostPart)
+		if hostNames, ok := hostLineNames(line); ok {
 
 			for _, name := range hostNames {
 				if name == hostName {
@@ -885,37 +911,23 @@ func quickHostSearchInFile(hostName string, configPath string, processedFiles ma
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		// Ignore empty lines and comments (except includes)
-		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "# Tags:")) {
+		// Split the line the way OpenSSH does; this also skips empty lines and comments
+		parsed, ok := splitConfigLine(scanner.Text())
+		if !ok || len(parsed.args) == 0 {
 			continue
 		}
 
-		// Split line into words
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		key := strings.ToLower(parts[0])
-		value := strings.Join(parts[1:], " ")
-
-		switch key {
+		switch strings.ToLower(parsed.keyword) {
 		case "include":
-			// Handle Include directive - search in included files
-			if found, err := quickSearchInclude(hostName, value, configPath, processedFiles); err == nil && found {
-				return true, nil // Found in included file
+			// Handle Include directive - search in included files, one glob pattern per argument
+			for _, pattern := range parsed.args {
+				if found, err := quickSearchInclude(hostName, pattern, configPath, processedFiles); err == nil && found {
+					return true, nil // Found in included file
+				}
 			}
 		case "host":
-			// Parse multiple host names from the Host line
-			hostNames := strings.Fields(value)
-
 			// Check if our target host is in this Host declaration
-			for _, candidateHostName := range hostNames {
-				// Remove surrounding double quotes if present
-				candidateHostName = strings.Trim(candidateHostName, `"`)
-
+			for _, candidateHostName := range parsed.args {
 				// Skip hosts with wildcards (*, ?) as they are typically patterns
 				if !strings.ContainsAny(candidateHostName, "*?") && candidateHostName == hostName {
 					return true, nil // Found the host!
@@ -986,10 +998,7 @@ func IsPartOfMultiHostDeclaration(hostName string, configPath string) (bool, []s
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		if strings.HasPrefix(strings.ToLower(line), "host ") {
-			// Extract host names (can be multiple hosts on one line)
-			hostPart := strings.TrimSpace(line[5:]) // Remove "host "
-			hostNames := strings.Fields(hostPart)
+		if hostNames, ok := hostLineNames(line); ok {
 
 			// Check if our target host is in this Host declaration
 			for _, name := range hostNames {
@@ -1041,9 +1050,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 			nextLine := strings.TrimSpace(lines[i+1])
 
 			// Check if this is a Host line that contains our target host
-			if strings.HasPrefix(nextLine, "Host ") {
-				hostPart := strings.TrimSpace(nextLine[5:]) // Remove "Host "
-				foundHostNames := strings.Fields(hostPart)
+			if foundHostNames, ok := hostLineNames(nextLine); ok {
 
 				// Check if our target host is in this Host declaration
 				targetHostIndex := -1
@@ -1072,18 +1079,18 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 
 						// Update the Host line with remaining hosts
 						if len(remainingHosts) > 0 {
-							newLines = append(newLines, "Host "+strings.Join(remainingHosts, " "))
+							newLines = append(newLines, "Host "+formatHostNames(remainingHosts...))
 
 							// Copy the existing configuration for remaining hosts
 							i += 2 // Skip tags and original Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								newLines = append(newLines, lines[i])
 								i++
 							}
 						} else {
 							// No remaining hosts, skip the entire block
 							i += 2 // Skip tags and Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								i++
 							}
 						}
@@ -1093,39 +1100,8 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						if len(newHost.Tags) > 0 {
 							newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 						}
-						newLines = append(newLines, "Host "+newHost.Name)
-						newLines = append(newLines, "    HostName "+newHost.Hostname)
-						if newHost.User != "" {
-							newLines = append(newLines, "    User "+newHost.User)
-						}
-						if newHost.Port != "" && newHost.Port != "22" {
-							newLines = append(newLines, "    Port "+newHost.Port)
-						}
-						if newHost.Identity != "" {
-							newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-						}
-						if newHost.ProxyJump != "" {
-							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-						}
-						if newHost.ProxyCommand != "" {
-							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-						}
-						if newHost.RemoteCommand != "" {
-							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-						}
-						if newHost.RequestTTY != "" {
-							newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-						}
-						// Write SSH options
-						if newHost.Options != "" {
-							options := strings.Split(newHost.Options, "\n")
-							for _, option := range options {
-								option = strings.TrimSpace(option)
-								if option != "" {
-									newLines = append(newLines, "    "+option)
-								}
-							}
-						}
+						newLines = append(newLines, "Host "+formatHostNames(newHost.Name))
+						newLines = append(newLines, hostDirectiveLines(newHost)...)
 						newLines = append(newLines, "")
 
 						continue
@@ -1133,7 +1109,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						// Simple case: only one host, replace entire block
 						// Skip until we find the end of this host block (empty line or next Host)
 						i += 2 // Skip tags and Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 
@@ -1150,39 +1126,8 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						if len(newHost.Tags) > 0 {
 							newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 						}
-						newLines = append(newLines, "Host "+newHost.Name)
-						newLines = append(newLines, "    HostName "+newHost.Hostname)
-						if newHost.User != "" {
-							newLines = append(newLines, "    User "+newHost.User)
-						}
-						if newHost.Port != "" && newHost.Port != "22" {
-							newLines = append(newLines, "    Port "+newHost.Port)
-						}
-						if newHost.Identity != "" {
-							newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-						}
-						if newHost.ProxyJump != "" {
-							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-						}
-						if newHost.ProxyCommand != "" {
-							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-						}
-						if newHost.RemoteCommand != "" {
-							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-						}
-						if newHost.RequestTTY != "" {
-							newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-						}
-						// Write SSH options
-						if newHost.Options != "" {
-							options := strings.Split(newHost.Options, "\n")
-							for _, option := range options {
-								option = strings.TrimSpace(option)
-								if option != "" {
-									newLines = append(newLines, "    "+option)
-								}
-							}
-						}
+						newLines = append(newLines, "Host "+formatHostNames(newHost.Name))
+						newLines = append(newLines, hostDirectiveLines(newHost)...)
 
 						// Add empty line after the host configuration for separation
 						newLines = append(newLines, "")
@@ -1194,9 +1139,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 		}
 
 		// Check for Host line without tags
-		if strings.HasPrefix(line, "Host ") {
-			hostPart := strings.TrimSpace(line[5:]) // Remove "Host "
-			foundHostNames := strings.Fields(hostPart)
+		if foundHostNames, ok := hostLineNames(line); ok {
 
 			// Check if our target host is in this Host declaration
 			targetHostIndex := -1
@@ -1222,18 +1165,18 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 
 					// Update the Host line with remaining hosts
 					if len(remainingHosts) > 0 {
-						newLines = append(newLines, "Host "+strings.Join(remainingHosts, " "))
+						newLines = append(newLines, "Host "+formatHostNames(remainingHosts...))
 
 						// Copy the existing configuration for remaining hosts
 						i++ // Skip original Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							newLines = append(newLines, lines[i])
 							i++
 						}
 					} else {
 						// No remaining hosts, skip the entire block
 						i++ // Skip Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 					}
@@ -1243,39 +1186,8 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					if len(newHost.Tags) > 0 {
 						newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 					}
-					newLines = append(newLines, "Host "+newHost.Name)
-					newLines = append(newLines, "    HostName "+newHost.Hostname)
-					if newHost.User != "" {
-						newLines = append(newLines, "    User "+newHost.User)
-					}
-					if newHost.Port != "" && newHost.Port != "22" {
-						newLines = append(newLines, "    Port "+newHost.Port)
-					}
-					if newHost.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-					}
-					if newHost.ProxyJump != "" {
-						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-					}
-					if newHost.ProxyCommand != "" {
-						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-					}
-					if newHost.RemoteCommand != "" {
-						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-					}
-					if newHost.RequestTTY != "" {
-						newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-					}
-					// Write SSH options
-					if newHost.Options != "" {
-						options := strings.Split(newHost.Options, "\n")
-						for _, option := range options {
-							option = strings.TrimSpace(option)
-							if option != "" {
-								newLines = append(newLines, "    "+option)
-							}
-						}
-					}
+					newLines = append(newLines, "Host "+formatHostNames(newHost.Name))
+					newLines = append(newLines, hostDirectiveLines(newHost)...)
 					newLines = append(newLines, "")
 
 					continue
@@ -1283,7 +1195,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					// Simple case: only one host, replace entire block
 					// Skip until we find the end of this host block
 					i++ // Skip Host line
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 						i++
 					}
 
@@ -1300,39 +1212,8 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					if len(newHost.Tags) > 0 {
 						newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 					}
-					newLines = append(newLines, "Host "+newHost.Name)
-					newLines = append(newLines, "    HostName "+newHost.Hostname)
-					if newHost.User != "" {
-						newLines = append(newLines, "    User "+newHost.User)
-					}
-					if newHost.Port != "" && newHost.Port != "22" {
-						newLines = append(newLines, "    Port "+newHost.Port)
-					}
-					if newHost.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-					}
-					if newHost.ProxyJump != "" {
-						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-					}
-					if newHost.ProxyCommand != "" {
-						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-					}
-					if newHost.RemoteCommand != "" {
-						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-					}
-					if newHost.RequestTTY != "" {
-						newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-					}
-					// Write SSH options
-					if newHost.Options != "" {
-						options := strings.Split(newHost.Options, "\n")
-						for _, option := range options {
-							option = strings.TrimSpace(option)
-							if option != "" {
-								newLines = append(newLines, "    "+option)
-							}
-						}
-					}
+					newLines = append(newLines, "Host "+formatHostNames(newHost.Name))
+					newLines = append(newLines, hostDirectiveLines(newHost)...)
 
 					// Add empty line after the host configuration for separation
 					newLines = append(newLines, "")
@@ -1408,9 +1289,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 			nextLineNumber := i + 2 // The Host line is at i+1, so its 1-indexed number is i+2
 
 			// Check if this is a Host line that contains our target host
-			if strings.HasPrefix(nextLine, "Host ") {
-				hostPart := strings.TrimSpace(nextLine[5:]) // Remove "Host "
-				foundHostNames := strings.Fields(hostPart)
+			if foundHostNames, ok := hostLineNames(nextLine); ok {
 
 				// Check if our target host is in this Host declaration
 				targetHostIndex := -1
@@ -1441,18 +1320,18 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 
 						if len(remainingHosts) > 0 {
 							// Update the Host line with remaining hosts
-							newLines = append(newLines, "Host "+strings.Join(remainingHosts, " "))
+							newLines = append(newLines, "Host "+formatHostNames(remainingHosts...))
 
 							// Copy the existing configuration for remaining hosts
 							i += 2 // Skip tags and original Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								newLines = append(newLines, lines[i])
 								i++
 							}
 						} else {
 							// No remaining hosts, skip the entire block
 							i += 2 // Skip tags and Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								i++
 							}
 						}
@@ -1474,7 +1353,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 						i += 2
 
 						// Skip until we find the end of this host block (empty line or next Host)
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 
@@ -1495,9 +1374,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 		}
 
 		// Check for Host line without tags
-		if strings.HasPrefix(line, "Host ") {
-			hostPart := strings.TrimSpace(line[5:]) // Remove "Host "
-			foundHostNames := strings.Fields(hostPart)
+		if foundHostNames, ok := hostLineNames(line); ok {
 
 			// Check if our target host is in this Host declaration
 			targetHostIndex := -1
@@ -1525,18 +1402,18 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 
 					if len(remainingHosts) > 0 {
 						// Update the Host line with remaining hosts
-						newLines = append(newLines, "Host "+strings.Join(remainingHosts, " "))
+						newLines = append(newLines, "Host "+formatHostNames(remainingHosts...))
 
 						// Copy the existing configuration for remaining hosts
 						i++ // Skip original Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							newLines = append(newLines, lines[i])
 							i++
 						}
 					} else {
 						// No remaining hosts, skip the entire block
 						i++ // Skip Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 					}
@@ -1558,7 +1435,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 					i++
 
 					// Skip until we find the end of this host block
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 						i++
 					}
 
@@ -1817,9 +1694,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 			nextLine := strings.TrimSpace(lines[i+1])
 
 			// Check if this is a Host line that contains any of our original hosts
-			if strings.HasPrefix(nextLine, "Host ") {
-				hostPart := strings.TrimSpace(nextLine[5:]) // Remove "Host "
-				foundHostNames := strings.Fields(hostPart)
+			if foundHostNames, ok := hostLineNames(nextLine); ok {
 
 				// Check if any of our original hosts are in this Host declaration
 				hasOriginalHost := false
@@ -1840,7 +1715,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 
 					// Skip the old block entirely
 					i += 2 // Skip tags and Host line
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 						i++
 					}
 
@@ -1860,42 +1735,10 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 					}
 
 					// Add Host line with new host names
-					newLines = append(newLines, "Host "+strings.Join(newHosts, " "))
+					newLines = append(newLines, "Host "+formatHostNames(newHosts...))
 
 					// Add common properties
-					newLines = append(newLines, "    HostName "+commonProperties.Hostname)
-					if commonProperties.User != "" {
-						newLines = append(newLines, "    User "+commonProperties.User)
-					}
-					if commonProperties.Port != "" && commonProperties.Port != "22" {
-						newLines = append(newLines, "    Port "+commonProperties.Port)
-					}
-					if commonProperties.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(commonProperties.Identity))
-					}
-					if commonProperties.ProxyJump != "" {
-						newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
-					}
-					if commonProperties.ProxyCommand != "" {
-						newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
-					}
-					if commonProperties.RemoteCommand != "" {
-						newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
-					}
-					if commonProperties.RequestTTY != "" {
-						newLines = append(newLines, "    RequestTTY "+commonProperties.RequestTTY)
-					}
-
-					// Write SSH options
-					if commonProperties.Options != "" {
-						options := strings.Split(commonProperties.Options, "\n")
-						for _, option := range options {
-							option = strings.TrimSpace(option)
-							if option != "" {
-								newLines = append(newLines, "    "+option)
-							}
-						}
-					}
+					newLines = append(newLines, hostDirectiveLines(commonProperties)...)
 
 					// Add empty line after the block
 					newLines = append(newLines, "")
@@ -1906,9 +1749,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 		}
 
 		// Check for Host line without tags (same logic)
-		if strings.HasPrefix(line, "Host ") {
-			hostPart := strings.TrimSpace(line[5:]) // Remove "Host "
-			foundHostNames := strings.Fields(hostPart)
+		if foundHostNames, ok := hostLineNames(line); ok {
 
 			// Check if any of our original hosts are in this Host declaration
 			hasOriginalHost := false
@@ -1929,7 +1770,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 
 				// Skip the old block entirely
 				i++ // Skip Host line
-				for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+				for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 					i++
 				}
 
@@ -1949,42 +1790,10 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 				}
 
 				// Add Host line with new host names
-				newLines = append(newLines, "Host "+strings.Join(newHosts, " "))
+				newLines = append(newLines, "Host "+formatHostNames(newHosts...))
 
 				// Add common properties
-				newLines = append(newLines, "    HostName "+commonProperties.Hostname)
-				if commonProperties.User != "" {
-					newLines = append(newLines, "    User "+commonProperties.User)
-				}
-				if commonProperties.Port != "" && commonProperties.Port != "22" {
-					newLines = append(newLines, "    Port "+commonProperties.Port)
-				}
-				if commonProperties.Identity != "" {
-					newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(commonProperties.Identity))
-				}
-				if commonProperties.ProxyJump != "" {
-					newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
-				}
-				if commonProperties.ProxyCommand != "" {
-					newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
-				}
-				if commonProperties.RemoteCommand != "" {
-					newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
-				}
-				if commonProperties.RequestTTY != "" {
-					newLines = append(newLines, "    RequestTTY "+commonProperties.RequestTTY)
-				}
-
-				// Write SSH options
-				if commonProperties.Options != "" {
-					options := strings.Split(commonProperties.Options, "\n")
-					for _, option := range options {
-						option = strings.TrimSpace(option)
-						if option != "" {
-							newLines = append(newLines, "    "+option)
-						}
-					}
-				}
+				newLines = append(newLines, hostDirectiveLines(commonProperties)...)
 
 				// Add empty line after the block
 				newLines = append(newLines, "")
