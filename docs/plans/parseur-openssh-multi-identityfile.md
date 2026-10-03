@@ -167,7 +167,7 @@ ordre.
 
 ## Vague 2 : ne plus perdre de clés
 
-- [ ] 2.1 Refactorisation préalable : une seule fonction écrit les directives d'un hôte, dans
+- [x] 2.1 Refactorisation préalable : une seule fonction écrit les directives d'un hôte, dans
   l'ordre actuel. Elle est utilisée par `AddSSHHostToFile` et par les six branches de
   `UpdateSSHHostInFile` et `UpdateMultiHostBlock`. Aucun comportement ne change, et les tests
   existants restent verts. (AC-9)
@@ -233,6 +233,8 @@ ordre.
     qu'avant. Regarde en particulier les hôtes déclarés dans des fichiers inclus, et un hôte avec
     un `ProxyCommand` ou un `IdentityFile` entre guillemets (vue info avec `i`). Puis
     `go run . <un hôte>` doit se connecter comme avant.
+  - **Retour d'essai (Gu1llaum-3, 03/10/2026) :** essai fait sur la vraie config, « ça
+    fonctionne ». Feu vert pour la vague 2.
 
 ## Hors plan
 

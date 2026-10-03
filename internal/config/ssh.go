@@ -546,6 +546,40 @@ func formatSSHConfigValue(value string) string {
 	return value
 }
 
+// hostDirectiveLines returns the indented directive lines of a host block,
+// everything after the Host line, in the order sshm writes them.
+func hostDirectiveLines(host SSHHost) []string {
+	lines := []string{"    HostName " + host.Hostname}
+	if host.User != "" {
+		lines = append(lines, "    User "+host.User)
+	}
+	if host.Port != "" && host.Port != "22" {
+		lines = append(lines, "    Port "+host.Port)
+	}
+	if host.Identity != "" {
+		lines = append(lines, "    IdentityFile "+formatSSHConfigValue(host.Identity))
+	}
+	if host.ProxyJump != "" {
+		lines = append(lines, "    ProxyJump "+host.ProxyJump)
+	}
+	if host.ProxyCommand != "" {
+		lines = append(lines, "    ProxyCommand="+host.ProxyCommand)
+	}
+	if host.RemoteCommand != "" {
+		lines = append(lines, "    RemoteCommand "+host.RemoteCommand)
+	}
+	if host.RequestTTY != "" {
+		lines = append(lines, "    RequestTTY "+host.RequestTTY)
+	}
+	for _, option := range strings.Split(host.Options, "\n") {
+		option = strings.TrimSpace(option)
+		if option != "" {
+			lines = append(lines, "    "+option)
+		}
+	}
+	return lines
+}
+
 // AddSSHHost adds a new SSH host to the config file
 func AddSSHHost(host SSHHost) error {
 	configPath, err := GetDefaultSSHConfigPath()
@@ -603,72 +637,9 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 		return err
 	}
 
-	_, err = file.WriteString(fmt.Sprintf("    HostName %s\n", host.Hostname))
-	if err != nil {
-		return err
-	}
-
-	if host.User != "" {
-		_, err = file.WriteString(fmt.Sprintf("    User %s\n", host.User))
-		if err != nil {
+	for _, line := range hostDirectiveLines(host) {
+		if _, err = file.WriteString(line + "\n"); err != nil {
 			return err
-		}
-	}
-
-	if host.Port != "" && host.Port != "22" {
-		_, err = file.WriteString(fmt.Sprintf("    Port %s\n", host.Port))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.Identity != "" {
-		_, err = file.WriteString(fmt.Sprintf("    IdentityFile %s\n", formatSSHConfigValue(host.Identity)))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.ProxyJump != "" {
-		_, err = file.WriteString(fmt.Sprintf("    ProxyJump %s\n", host.ProxyJump))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.ProxyCommand != "" {
-		_, err = file.WriteString(fmt.Sprintf("    ProxyCommand=%s\n", host.ProxyCommand))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.RemoteCommand != "" {
-		_, err = file.WriteString(fmt.Sprintf("    RemoteCommand %s\n", host.RemoteCommand))
-		if err != nil {
-			return err
-		}
-	}
-
-	if host.RequestTTY != "" {
-		_, err = file.WriteString(fmt.Sprintf("    RequestTTY %s\n", host.RequestTTY))
-		if err != nil {
-			return err
-		}
-	}
-
-	// Write SSH options
-	if host.Options != "" {
-		// Split options by newlines and write each one
-		options := strings.Split(host.Options, "\n")
-		for _, option := range options {
-			option = strings.TrimSpace(option)
-			if option != "" {
-				_, err = file.WriteString(fmt.Sprintf("    %s\n", option))
-				if err != nil {
-					return err
-				}
-			}
 		}
 	}
 
@@ -1077,38 +1048,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 							newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 						}
 						newLines = append(newLines, "Host "+newHost.Name)
-						newLines = append(newLines, "    HostName "+newHost.Hostname)
-						if newHost.User != "" {
-							newLines = append(newLines, "    User "+newHost.User)
-						}
-						if newHost.Port != "" && newHost.Port != "22" {
-							newLines = append(newLines, "    Port "+newHost.Port)
-						}
-						if newHost.Identity != "" {
-							newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-						}
-						if newHost.ProxyJump != "" {
-							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-						}
-						if newHost.ProxyCommand != "" {
-							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-						}
-						if newHost.RemoteCommand != "" {
-							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-						}
-						if newHost.RequestTTY != "" {
-							newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-						}
-						// Write SSH options
-						if newHost.Options != "" {
-							options := strings.Split(newHost.Options, "\n")
-							for _, option := range options {
-								option = strings.TrimSpace(option)
-								if option != "" {
-									newLines = append(newLines, "    "+option)
-								}
-							}
-						}
+						newLines = append(newLines, hostDirectiveLines(newHost)...)
 						newLines = append(newLines, "")
 
 						continue
@@ -1134,38 +1074,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 							newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 						}
 						newLines = append(newLines, "Host "+newHost.Name)
-						newLines = append(newLines, "    HostName "+newHost.Hostname)
-						if newHost.User != "" {
-							newLines = append(newLines, "    User "+newHost.User)
-						}
-						if newHost.Port != "" && newHost.Port != "22" {
-							newLines = append(newLines, "    Port "+newHost.Port)
-						}
-						if newHost.Identity != "" {
-							newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-						}
-						if newHost.ProxyJump != "" {
-							newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-						}
-						if newHost.ProxyCommand != "" {
-							newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-						}
-						if newHost.RemoteCommand != "" {
-							newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-						}
-						if newHost.RequestTTY != "" {
-							newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-						}
-						// Write SSH options
-						if newHost.Options != "" {
-							options := strings.Split(newHost.Options, "\n")
-							for _, option := range options {
-								option = strings.TrimSpace(option)
-								if option != "" {
-									newLines = append(newLines, "    "+option)
-								}
-							}
-						}
+						newLines = append(newLines, hostDirectiveLines(newHost)...)
 
 						// Add empty line after the host configuration for separation
 						newLines = append(newLines, "")
@@ -1227,38 +1136,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 					}
 					newLines = append(newLines, "Host "+newHost.Name)
-					newLines = append(newLines, "    HostName "+newHost.Hostname)
-					if newHost.User != "" {
-						newLines = append(newLines, "    User "+newHost.User)
-					}
-					if newHost.Port != "" && newHost.Port != "22" {
-						newLines = append(newLines, "    Port "+newHost.Port)
-					}
-					if newHost.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-					}
-					if newHost.ProxyJump != "" {
-						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-					}
-					if newHost.ProxyCommand != "" {
-						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-					}
-					if newHost.RemoteCommand != "" {
-						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-					}
-					if newHost.RequestTTY != "" {
-						newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-					}
-					// Write SSH options
-					if newHost.Options != "" {
-						options := strings.Split(newHost.Options, "\n")
-						for _, option := range options {
-							option = strings.TrimSpace(option)
-							if option != "" {
-								newLines = append(newLines, "    "+option)
-							}
-						}
-					}
+					newLines = append(newLines, hostDirectiveLines(newHost)...)
 					newLines = append(newLines, "")
 
 					continue
@@ -1284,38 +1162,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 					}
 					newLines = append(newLines, "Host "+newHost.Name)
-					newLines = append(newLines, "    HostName "+newHost.Hostname)
-					if newHost.User != "" {
-						newLines = append(newLines, "    User "+newHost.User)
-					}
-					if newHost.Port != "" && newHost.Port != "22" {
-						newLines = append(newLines, "    Port "+newHost.Port)
-					}
-					if newHost.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(newHost.Identity))
-					}
-					if newHost.ProxyJump != "" {
-						newLines = append(newLines, "    ProxyJump "+newHost.ProxyJump)
-					}
-					if newHost.ProxyCommand != "" {
-						newLines = append(newLines, "    ProxyCommand="+newHost.ProxyCommand)
-					}
-					if newHost.RemoteCommand != "" {
-						newLines = append(newLines, "    RemoteCommand "+newHost.RemoteCommand)
-					}
-					if newHost.RequestTTY != "" {
-						newLines = append(newLines, "    RequestTTY "+newHost.RequestTTY)
-					}
-					// Write SSH options
-					if newHost.Options != "" {
-						options := strings.Split(newHost.Options, "\n")
-						for _, option := range options {
-							option = strings.TrimSpace(option)
-							if option != "" {
-								newLines = append(newLines, "    "+option)
-							}
-						}
-					}
+					newLines = append(newLines, hostDirectiveLines(newHost)...)
 
 					// Add empty line after the host configuration for separation
 					newLines = append(newLines, "")
@@ -1846,39 +1693,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 					newLines = append(newLines, "Host "+strings.Join(newHosts, " "))
 
 					// Add common properties
-					newLines = append(newLines, "    HostName "+commonProperties.Hostname)
-					if commonProperties.User != "" {
-						newLines = append(newLines, "    User "+commonProperties.User)
-					}
-					if commonProperties.Port != "" && commonProperties.Port != "22" {
-						newLines = append(newLines, "    Port "+commonProperties.Port)
-					}
-					if commonProperties.Identity != "" {
-						newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(commonProperties.Identity))
-					}
-					if commonProperties.ProxyJump != "" {
-						newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
-					}
-					if commonProperties.ProxyCommand != "" {
-						newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
-					}
-					if commonProperties.RemoteCommand != "" {
-						newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
-					}
-					if commonProperties.RequestTTY != "" {
-						newLines = append(newLines, "    RequestTTY "+commonProperties.RequestTTY)
-					}
-
-					// Write SSH options
-					if commonProperties.Options != "" {
-						options := strings.Split(commonProperties.Options, "\n")
-						for _, option := range options {
-							option = strings.TrimSpace(option)
-							if option != "" {
-								newLines = append(newLines, "    "+option)
-							}
-						}
-					}
+					newLines = append(newLines, hostDirectiveLines(commonProperties)...)
 
 					// Add empty line after the block
 					newLines = append(newLines, "")
@@ -1935,39 +1750,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 				newLines = append(newLines, "Host "+strings.Join(newHosts, " "))
 
 				// Add common properties
-				newLines = append(newLines, "    HostName "+commonProperties.Hostname)
-				if commonProperties.User != "" {
-					newLines = append(newLines, "    User "+commonProperties.User)
-				}
-				if commonProperties.Port != "" && commonProperties.Port != "22" {
-					newLines = append(newLines, "    Port "+commonProperties.Port)
-				}
-				if commonProperties.Identity != "" {
-					newLines = append(newLines, "    IdentityFile "+formatSSHConfigValue(commonProperties.Identity))
-				}
-				if commonProperties.ProxyJump != "" {
-					newLines = append(newLines, "    ProxyJump "+commonProperties.ProxyJump)
-				}
-				if commonProperties.ProxyCommand != "" {
-					newLines = append(newLines, "    ProxyCommand="+commonProperties.ProxyCommand)
-				}
-				if commonProperties.RemoteCommand != "" {
-					newLines = append(newLines, "    RemoteCommand "+commonProperties.RemoteCommand)
-				}
-				if commonProperties.RequestTTY != "" {
-					newLines = append(newLines, "    RequestTTY "+commonProperties.RequestTTY)
-				}
-
-				// Write SSH options
-				if commonProperties.Options != "" {
-					options := strings.Split(commonProperties.Options, "\n")
-					for _, option := range options {
-						option = strings.TrimSpace(option)
-						if option != "" {
-							newLines = append(newLines, "    "+option)
-						}
-					}
-				}
+				newLines = append(newLines, hostDirectiveLines(commonProperties)...)
 
 				// Add empty line after the block
 				newLines = append(newLines, "")
