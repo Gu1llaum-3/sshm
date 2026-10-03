@@ -1,3 +1,6 @@
+// Tokenizer for ssh config lines: splits a line into its keyword and
+// arguments the way OpenSSH does, so sshm reads values as ssh reads them.
+
 package config
 
 import "strings"
