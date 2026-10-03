@@ -1,6 +1,6 @@
 # Lire et écrire `~/.ssh/config` comme OpenSSH, sans perdre de clés
 
-> Statut : validé par Gu1llaum-3 le 03/10/2026
+> Statut : terminé le 03/10/2026
 > Origine : audit de la PR 59 du 03/10/2026 (bugs hors PR), conversation du 03/10/2026
 > Base : `dev` (la branche de travail part de `dev`, et la PR revient sur `dev`)
 
@@ -365,6 +365,61 @@ PR à part), R-12 (même schéma que tout le formulaire), R-8, R-9 et R-11 (faus
   - R-10 (confirmée, mineure) : `raw` et `rawArgs` ne disent pas lequel garde le commentaire ;
   - R-11 (fausse) : `formatIdentities` suit le modèle des fonctions voisines de `info_form.go` ;
   - R-12 (confirmée) : indice `3` du formulaire, comme tout le formulaire existant.
+
+## Réalisé
+
+Branche `fix/openssh-config-parsing`, partie de `dev` (`f6ad34b`), 18 commits. Vérification
+finale : `go build`, `go vet` et `go test ./...`, code de retour 0. Les tests oracle `ssh -G`
+ont tourné avec OpenSSH 10.3, sans être sautés.
+
+**Critères :**
+
+- **AC-1, atteint :** `TestParseFollowsOpenSSHSyntax_AC1` (19 cas sur le parseur),
+  `TestSplitConfigLineFollowsOpenSSH` et l'oracle `TestSplitConfigLineMatchesSSHClient`, qui
+  compare le découpeur à `ssh -G`.
+- **AC-2, atteint :** `TestIncludeQuotedPathsAndSeveralPatterns_AC2` (parseur) et
+  `TestQuickSearchFollowsOpenSSHSyntax_AC2` (recherche rapide de `sshm <host>`).
+- **AC-3, atteint :** `TestProxyCommandWrittenBySSHMIsReadBack_AC3`, y compris
+  `ProxyCommand=none`.
+- **AC-4, atteint :** `TestParseIsLenientWhereOpenSSHRejects_AC4` et
+  `TestSplitConfigLineIsLenient_AC4`. La description du guillemet non fermé a été précisée
+  (R-3).
+- **AC-5, atteint :** `TestParseKeepsEveryIdentityFileInOrder_AC5` et
+  `TestSavingHostKeepsAllIdentityFiles_AC5` (bloc simple, bloc à plusieurs hôtes,
+  déplacement).
+- **AC-6, atteint :** `TestEditFormKeepsExtraIdentities_AC6` et
+  `TestFormsShowExtraIdentities_AC6`, plus un essai réel dans le TUI (vague 2).
+- **AC-7, atteint :** `TestHostBlocksWrittenAnyWayCanBeEditedAndDeleted_AC7`,
+  `TestMultiHostBlocksWrittenAnyWayCanBeEdited_AC7` et
+  `TestDuplicateHostNamesTargetTheRightBlock_AC7`.
+- **AC-8, atteint, amendé :** `TestWrittenValuesAreReadBackUnchanged_AC8` et
+  `TestWrittenValuesAreReadBackBySSHClient_AC8` (12 valeurs × 4 champs),
+  `TestQuotedHostNameRoundTrip_AC8` et `TestProxyJumpIsKeptRaw_AC8`. `ProxyJump` est traité
+  brut, comme OpenSSH, au lieu d'être mis entre guillemets.
+- **AC-9, atteint, avec un écart :** toute la suite passe, et l'essai manuel a été fait sur une
+  copie de la vraie config (vague 3). Deux attentes de `TestFormatSSHConfigValue` ont été
+  corrigées au lieu d'une : elles validaient toutes deux une sortie qui ne se relisait pas à
+  l'identique.
+
+**Écarts au plan :**
+
+- `ProxyJump` est lu et écrit brut (amendement du 03/10/2026, décidé par Gu1llaum-3) : OpenSSH
+  ne le découpe pas, et les guillemets prévus auraient cassé le saut ;
+- la décision sur les guillemets simples a été corrigée (R-2) : OpenSSH y résout `\\`, `\"` et
+  `\'`, comme le découpeur ;
+- AC-6 est couvert par des tests automatiques, en plus de l'essai manuel prévu ;
+- `=` en tête de valeur est aussi mis entre guillemets, sinon il est lu comme le séparateur
+  `Clé=valeur`.
+
+**Tâches ajoutées :** la vague 4, « retours de revue » (R-2, R-3, R-4, R-7, R-10).
+
+**Question ouverte, hypothèse appliquée :** le JSON de `sshm info` ne change pas de forme.
+`identity_file` d'un hôte à plusieurs clés renvoie désormais la **première** clé au lieu de la
+dernière. Les clés en plus ne sont pas exposées.
+
+**Reste hors plan :** voir la section « Hors plan » (fichiers non formatés antérieurs, parcours
+de blocs dupliqué, commentaires perdus à l'enregistrement), ainsi que la section
+« Hors périmètre ».
 
 ## Hors plan
 
