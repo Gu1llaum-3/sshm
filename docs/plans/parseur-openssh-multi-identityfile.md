@@ -171,7 +171,7 @@ ordre.
   l'ordre actuel. Elle est utilisée par `AddSSHHostToFile` et par les six branches de
   `UpdateSSHHostInFile` et `UpdateMultiHostBlock`. Aucun comportement ne change, et les tests
   existants restent verts. (AC-9)
-- [ ] 2.2 Test qui reproduit la perte de clés et échoue : un hôte à deux `IdentityFile` plus
+- [x] 2.2 Test qui reproduit la perte de clés et échoue : un hôte à deux `IdentityFile` plus
   `ForwardAgent`, enregistré sans changement par les deux chemins de sauvegarde, puis déplacé.
   (AC-5)
 - [ ] 2.3 `ExtraIdentities` : la première clé dans `Identity`, les suivantes dans l'ordre,
