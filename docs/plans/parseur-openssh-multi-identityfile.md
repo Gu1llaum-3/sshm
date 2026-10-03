@@ -157,7 +157,7 @@ ordre.
 - [x] 1.1 Test qui reproduit les bugs de lecture et échoue : table AC-1 sur
   `ParseSSHConfigFile`, plus `Include` avec espace (AC-2) et `ProxyCommand=` relu (AC-3). Il
   reste comme test de non-régression. (AC-1, AC-2, AC-3)
-- [ ] 1.2 Le découpeur `tokenize.go` et sa table de tests, en TDD, avec le test oracle `ssh -G`
+- [x] 1.2 Le découpeur `tokenize.go` et sa table de tests, en TDD, avec le test oracle `ssh -G`
   sauté si `ssh` est absent. (AC-1, AC-4)
 - [ ] 1.3 Brancher le découpeur dans le parseur principal : mot-clé avec `=`, trois sortes de
   valeurs, `Options` avec arguments bruts. Retirer les `strings.Trim` au cas par cas (`Host`,
