@@ -105,3 +105,17 @@ func TestSavingHostKeepsAllIdentityFiles_AC5(t *testing.T) {
 		}
 	})
 }
+
+// AC-5: the first IdentityFile is the main key (the one OpenSSH tries first),
+// the others are kept in file order
+func TestParseKeepsEveryIdentityFileInOrder_AC5(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "config")
+	writeConfig(t, configFile, "Host keys")
+	host := findHost(t, configFile, "keys")
+	if host.Identity != "~/.ssh/a" {
+		t.Errorf("Identity = %q, want %q", host.Identity, "~/.ssh/a")
+	}
+	if want := []string{"~/.ssh/b c"}; !reflect.DeepEqual(host.ExtraIdentities, want) {
+		t.Errorf("ExtraIdentities = %q, want %q", host.ExtraIdentities, want)
+	}
+}

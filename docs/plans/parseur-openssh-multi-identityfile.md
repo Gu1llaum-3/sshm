@@ -174,7 +174,7 @@ ordre.
 - [x] 2.2 Test qui reproduit la perte de clés et échoue : un hôte à deux `IdentityFile` plus
   `ForwardAgent`, enregistré sans changement par les deux chemins de sauvegarde, puis déplacé.
   (AC-5)
-- [ ] 2.3 `ExtraIdentities` : la première clé dans `Identity`, les suivantes dans l'ordre,
+- [x] 2.3 `ExtraIdentities` : la première clé dans `Identity`, les suivantes dans l'ordre,
   réécrites après la clé principale par la fonction de 2.1. Le test 2.2 passe. (AC-5)
 - [ ] 2.4 Formulaire d'édition et vue info : les clés en plus en lecture seule, et
   `submitEditForm` les transmet sans les modifier. Vérification prévue : `go run . -c <config

@@ -25,19 +25,20 @@ func getHomeDir() (string, error) {
 
 // SSHHost represents an SSH host configuration
 type SSHHost struct {
-	Name          string
-	Hostname      string
-	User          string
-	Port          string
-	Identity      string
-	ProxyJump     string
-	ProxyCommand  string
-	Options       string
-	RemoteCommand string // Command to execute after SSH connection
-	RequestTTY    string // Request TTY (yes, no, force, auto)
-	Tags          []string
-	SourceFile    string // Path to the config file where this host is defined
-	LineNumber    int    // Line number in the source file where this host block starts (1-indexed)
+	Name            string
+	Hostname        string
+	User            string
+	Port            string
+	Identity        string
+	ExtraIdentities []string // IdentityFile lines after the first one, in file order
+	ProxyJump       string
+	ProxyCommand    string
+	Options         string
+	RemoteCommand   string // Command to execute after SSH connection
+	RequestTTY      string // Request TTY (yes, no, force, auto)
+	Tags            []string
+	SourceFile      string // Path to the config file where this host is defined
+	LineNumber      int    // Line number in the source file where this host block starts (1-indexed)
 
 	// Temporary field to handle multiple aliases during parsing
 	aliasNames []string `json:"-"` // Do not serialize this field
@@ -335,7 +336,12 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 		case "identityfile":
 			if currentHost != nil {
-				currentHost.Identity = value
+				// OpenSSH tries every key in order: the first one is the main key
+				if currentHost.Identity == "" {
+					currentHost.Identity = value
+				} else {
+					currentHost.ExtraIdentities = append(currentHost.ExtraIdentities, value)
+				}
 			}
 		case "proxyjump":
 			if currentHost != nil {
@@ -558,6 +564,9 @@ func hostDirectiveLines(host SSHHost) []string {
 	}
 	if host.Identity != "" {
 		lines = append(lines, "    IdentityFile "+formatSSHConfigValue(host.Identity))
+	}
+	for _, identity := range host.ExtraIdentities {
+		lines = append(lines, "    IdentityFile "+formatSSHConfigValue(identity))
 	}
 	if host.ProxyJump != "" {
 		lines = append(lines, "    ProxyJump "+host.ProxyJump)
