@@ -882,37 +882,23 @@ func quickHostSearchInFile(hostName string, configPath string, processedFiles ma
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		// Ignore empty lines and comments (except includes)
-		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "# Tags:")) {
+		// Split the line the way OpenSSH does; this also skips empty lines and comments
+		parsed, ok := splitConfigLine(scanner.Text())
+		if !ok || len(parsed.args) == 0 {
 			continue
 		}
 
-		// Split line into words
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		key := strings.ToLower(parts[0])
-		value := strings.Join(parts[1:], " ")
-
-		switch key {
+		switch strings.ToLower(parsed.keyword) {
 		case "include":
-			// Handle Include directive - search in included files
-			if found, err := quickSearchInclude(hostName, value, configPath, processedFiles); err == nil && found {
-				return true, nil // Found in included file
+			// Handle Include directive - search in included files, one glob pattern per argument
+			for _, pattern := range parsed.args {
+				if found, err := quickSearchInclude(hostName, pattern, configPath, processedFiles); err == nil && found {
+					return true, nil // Found in included file
+				}
 			}
 		case "host":
-			// Parse multiple host names from the Host line
-			hostNames := strings.Fields(value)
-
 			// Check if our target host is in this Host declaration
-			for _, candidateHostName := range hostNames {
-				// Remove surrounding double quotes if present
-				candidateHostName = strings.Trim(candidateHostName, `"`)
-
+			for _, candidateHostName := range parsed.args {
 				// Skip hosts with wildcards (*, ?) as they are typically patterns
 				if !strings.ContainsAny(candidateHostName, "*?") && candidateHostName == hostName {
 					return true, nil // Found the host!

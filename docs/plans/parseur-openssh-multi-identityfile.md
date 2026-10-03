@@ -162,7 +162,7 @@ ordre.
 - [x] 1.3 Brancher le découpeur dans le parseur principal : mot-clé avec `=`, trois sortes de
   valeurs, `Options` avec arguments bruts. Retirer les `strings.Trim` au cas par cas (`Host`,
   `IdentityFile`). Le test 1.1 passe. (AC-1, AC-3, AC-4)
-- [ ] 1.4 Brancher le découpeur dans `processIncludeDirective`, `quickHostSearchInFile` et
+- [x] 1.4 Brancher le découpeur dans `processIncludeDirective`, `quickHostSearchInFile` et
   `quickSearchInclude`. (AC-2)
 
 ## Vague 2 : ne plus perdre de clés

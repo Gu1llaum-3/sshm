@@ -123,6 +123,41 @@ func TestIncludeQuotedPathsAndSeveralPatterns_AC2(t *testing.T) {
 	}
 }
 
+// AC-2: the quick search used by "sshm <host>" finds the same hosts as the parser
+func TestQuickSearchFollowsOpenSSHSyntax_AC2(t *testing.T) {
+	tempDir := t.TempDir()
+	spaced := filepath.Join(tempDir, "conf d")
+	if err := os.MkdirAll(spaced, 0700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		filepath.Join(spaced, "a.conf"):  "Host spaced-host\n",
+		filepath.Join(tempDir, "b.conf"): "Host second-host\n",
+		filepath.Join(tempDir, "c.conf"): "Host third-host\n",
+		filepath.Join(tempDir, "config"): "Include \"" + spaced + "/*\" # spaced dir\n" +
+			"Include b.conf c.conf\n" +
+			"Host=equals-host\n" +
+			"Host 'quoted host' other # comment\n",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"spaced-host", "second-host", "third-host", "equals-host", "quoted host", "other"} {
+		found, err := QuickHostExistsInFile(name, filepath.Join(tempDir, "config"))
+		if err != nil {
+			t.Fatalf("QuickHostExistsInFile(%q) error = %v", name, err)
+		}
+		if !found {
+			t.Errorf("QuickHostExistsInFile(%q) = false, want true", name)
+		}
+	}
+	if found, _ := QuickHostExistsInFile("comment", filepath.Join(tempDir, "config")); found {
+		t.Errorf("QuickHostExistsInFile(%q) = true, want false (it is a comment)", "comment")
+	}
+}
+
 // AC-3: a ProxyCommand written by sshm (as "ProxyCommand=...") is read back as ProxyCommand
 func TestProxyCommandWrittenBySSHMIsReadBack_AC3(t *testing.T) {
 	for _, command := range []string{"ssh -W %h:%p bastion", "none"} {
