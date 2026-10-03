@@ -202,7 +202,7 @@ ordre.
   (amendement du 03/10/2026). L'attente fausse de
   `ssh_test.go:1508` est corrigée. Les tests d'aller-retour avec sshm et avec `ssh -G` passent.
   (AC-8)
-- [ ] 3.4 Vérification d'ensemble : `go build`, `go vet` et `go test ./...` ; tests oracle lancés
+- [x] 3.4 Vérification d'ensemble : `go build`, `go vet` et `go test ./...` ; tests oracle lancés
   avec `ssh` présent ; essai manuel du TUI sur une copie de config réelle (ajout, modification,
   déplacement et suppression d'un hôte à deux clés et d'un hôte aux valeurs entre guillemets),
   avec comparaison du fichier avant et après. (AC-9)
@@ -278,8 +278,61 @@ ordre.
     - `i` sur cet hôte : les deux clés apparaissent ;
     - `e` : la seconde clé est listée sous « Identity File » ;
     - Ctrl+S sans rien changer, puis `diff ~/.ssh/config /tmp/c` : rien ne doit avoir disparu.
+- 03/10/2026, feu vert de Gu1llaum-3 pour la vague 3 (sans retour d'essai sur la vague 2).
+- 03/10/2026, **amendement ProxyJump** pendant la tâche 3.3. Le test oracle a montré
+  qu'OpenSSH ne découpe pas `ProxyJump` : `ProxyJump "user@bastion"` y donne `"user@bastion"`,
+  guillemets compris, et `ProxyJump "/a b/id"` est refusé (« Invalid ProxyJump »). Seul le
+  commentaire de fin est retiré. Mettre `ProxyJump` entre guillemets, comme le prévoyait le
+  plan, aurait cassé le saut. Gu1llaum-3 a choisi « brut, comme OpenSSH » : lecture par le
+  texte brut sans commentaire, écriture sans guillemets. Décisions, AC-8 et tâche 3.3 amendés.
+- 03/10/2026, vague 3 terminée (commits `98eced7`, `9ef7cc4`, `fe7a792`).
+  - **Livré :**
+    - `hostLineNames` et `isHostLine` (`ssh.go`) lisent une ligne `Host` avec le découpeur.
+      Elles servent à reconnaître le bloc visé et à détecter sa fin dans
+      `UpdateSSHHostInFile`, `UpdateMultiHostBlock`, `DeleteSSHHostFromFileWithLine`,
+      `HostExistsInSpecificFile` et `IsPartOfMultiHostDeclaration` ;
+    - `formatSSHConfigValue` met des guillemets dès que le découpeur changerait la valeur
+      (espace, tabulation, guillemet, `#` ou `=` en tête, `\\`), et échappe les guillemets et
+      les antislashs lus comme échappements. `formatHostNames` fait de même pour les noms de
+      `Host`. La règle s'applique à `IdentityFile`, aux clés en plus, à `User` et `HostName` ;
+    - `ProxyJump` est lu et écrit brut (amendement ci-dessus).
+  - **Tests :**
+    - `block_lookup_test.go` (AC-7) : cinq écritures de la ligne `Host`, avec et sans
+      `# Tags:`, en existence, modification et suppression ; les blocs à plusieurs hôtes ; le
+      même nom dans deux fichiers, et deux fois dans un fichier (`LineNumber`). Rouge au commit
+      `98eced7`, vert depuis `9ef7cc4` ;
+    - `write_symmetry_test.go` (AC-8) : 12 valeurs piégées × 4 champs, relues par sshm et par
+      `ssh -G` ; `ProxyJump` brut ; un nom de `Host` avec espace ajouté, retrouvé, modifié et
+      supprimé (rouge sans le correctif, vérifié en retirant le correctif de `ssh.go`).
+  - **Écarts au plan :**
+    - l'amendement `ProxyJump` ;
+    - deux attentes fausses dans `TestFormatSSHConfigValue`, pas une seule : `key"with"quotes`
+      (écrit tel quel, relu sans guillemets) et `"…key "with" quotes"` ;
+    - `=` en tête de valeur est aussi mis entre guillemets : sinon il est pris pour le
+      séparateur `Clé=valeur`.
+  - **Vérifié :**
+    - `go build`, `go vet` et `go test ./...`, code de retour 0. Les tests oracle ont tourné
+      avec OpenSSH 10.3 : 73 sous-tests, aucun sauté ;
+    - essai manuel sur une copie de la vraie config (`config` et `config.d`, sans les clés, avec
+      un `HOME` temporaire) :
+      - les vrais hôtes listés sont les mêmes qu'avec `dev` ;
+      - enregistrement sans changement d'un hôte à deux clés et d'un hôte écrit
+        `host …` / `HostName=…` / `User "john doe"` : aucune valeur perdue ;
+      - déplacement de l'hôte à deux clés vers `config.d/easypara` : les trois lignes suivent ;
+      - suppression des deux hôtes depuis le TUI : la copie redevient identique à la vraie
+        config ;
+      - ajout depuis le formulaire avec `User` `john doe` et une clé `~/.ssh/my key` : écrits
+        entre guillemets, relus à l'identique par sshm et par `ssh -G`.
+  - **Constaté, inchangé :** un enregistrement réécrit le bloc dans la forme de sshm (`Host`,
+    pas de `=`) et perd les commentaires de fin de ligne à l'intérieur du bloc. C'était déjà le
+    cas avant ce plan (noté hors plan).
+  - **Quoi essayer :** `cp ~/.ssh/config /tmp/c && go run . -c /tmp/c`, puis modifier un hôte
+    dont la ligne est écrite autrement que `Host nom` (minuscule, `=`, guillemets) : la
+    modification doit passer, sans « host not found ».
 
 ## Hors plan
 
 - `internal/config/appconfig.go` et `appconfig_test.go` ne passent pas `gofmt` (antérieur).
 - `internal/ui/file_selector.go` ne passe pas `gofmt` non plus (antérieur).
+- Enregistrer un hôte depuis le formulaire perd les commentaires de fin de ligne à l'intérieur
+  du bloc, et normalise `host`/`Host=` en `Host` (antérieur).
