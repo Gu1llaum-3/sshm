@@ -736,6 +736,22 @@ func FormatSSHOptionsForCommand(options string) string {
 	return strings.Join(result, " ")
 }
 
+// hostLineNames returns the host patterns of a Host line, read the way the
+// parser reads them, and false if the line is not a Host line.
+func hostLineNames(line string) ([]string, bool) {
+	parsed, ok := splitConfigLine(line)
+	if !ok || !strings.EqualFold(parsed.keyword, "host") {
+		return nil, false
+	}
+	return parsed.args, true
+}
+
+// isHostLine reports whether the line starts a Host block.
+func isHostLine(line string) bool {
+	_, ok := hostLineNames(line)
+	return ok
+}
+
 // HostExists checks if a host already exists in the config
 func HostExists(hostName string) (bool, error) {
 	hosts, err := ParseSSHConfig()
@@ -773,10 +789,7 @@ func HostExistsInSpecificFile(hostName string, configPath string) (bool, error) 
 		line := strings.TrimSpace(scanner.Text())
 
 		// Check for Host declaration
-		if strings.HasPrefix(strings.ToLower(line), "host ") {
-			// Extract host names (can be multiple hosts on one line)
-			hostPart := strings.TrimSpace(line[5:]) // Remove "host "
-			hostNames := strings.Fields(hostPart)
+		if hostNames, ok := hostLineNames(line); ok {
 
 			for _, name := range hostNames {
 				if name == hostName {
@@ -949,10 +962,7 @@ func IsPartOfMultiHostDeclaration(hostName string, configPath string) (bool, []s
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		if strings.HasPrefix(strings.ToLower(line), "host ") {
-			// Extract host names (can be multiple hosts on one line)
-			hostPart := strings.TrimSpace(line[5:]) // Remove "host "
-			hostNames := strings.Fields(hostPart)
+		if hostNames, ok := hostLineNames(line); ok {
 
 			// Check if our target host is in this Host declaration
 			for _, name := range hostNames {
@@ -1004,9 +1014,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 			nextLine := strings.TrimSpace(lines[i+1])
 
 			// Check if this is a Host line that contains our target host
-			if strings.HasPrefix(nextLine, "Host ") {
-				hostPart := strings.TrimSpace(nextLine[5:]) // Remove "Host "
-				foundHostNames := strings.Fields(hostPart)
+			if foundHostNames, ok := hostLineNames(nextLine); ok {
 
 				// Check if our target host is in this Host declaration
 				targetHostIndex := -1
@@ -1039,14 +1047,14 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 
 							// Copy the existing configuration for remaining hosts
 							i += 2 // Skip tags and original Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								newLines = append(newLines, lines[i])
 								i++
 							}
 						} else {
 							// No remaining hosts, skip the entire block
 							i += 2 // Skip tags and Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								i++
 							}
 						}
@@ -1065,7 +1073,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						// Simple case: only one host, replace entire block
 						// Skip until we find the end of this host block (empty line or next Host)
 						i += 2 // Skip tags and Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 
@@ -1095,9 +1103,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 		}
 
 		// Check for Host line without tags
-		if strings.HasPrefix(line, "Host ") {
-			hostPart := strings.TrimSpace(line[5:]) // Remove "Host "
-			foundHostNames := strings.Fields(hostPart)
+		if foundHostNames, ok := hostLineNames(line); ok {
 
 			// Check if our target host is in this Host declaration
 			targetHostIndex := -1
@@ -1127,14 +1133,14 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 
 						// Copy the existing configuration for remaining hosts
 						i++ // Skip original Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							newLines = append(newLines, lines[i])
 							i++
 						}
 					} else {
 						// No remaining hosts, skip the entire block
 						i++ // Skip Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 					}
@@ -1153,7 +1159,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					// Simple case: only one host, replace entire block
 					// Skip until we find the end of this host block
 					i++ // Skip Host line
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 						i++
 					}
 
@@ -1247,9 +1253,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 			nextLineNumber := i + 2 // The Host line is at i+1, so its 1-indexed number is i+2
 
 			// Check if this is a Host line that contains our target host
-			if strings.HasPrefix(nextLine, "Host ") {
-				hostPart := strings.TrimSpace(nextLine[5:]) // Remove "Host "
-				foundHostNames := strings.Fields(hostPart)
+			if foundHostNames, ok := hostLineNames(nextLine); ok {
 
 				// Check if our target host is in this Host declaration
 				targetHostIndex := -1
@@ -1284,14 +1288,14 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 
 							// Copy the existing configuration for remaining hosts
 							i += 2 // Skip tags and original Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								newLines = append(newLines, lines[i])
 								i++
 							}
 						} else {
 							// No remaining hosts, skip the entire block
 							i += 2 // Skip tags and Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 								i++
 							}
 						}
@@ -1313,7 +1317,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 						i += 2
 
 						// Skip until we find the end of this host block (empty line or next Host)
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 
@@ -1334,9 +1338,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 		}
 
 		// Check for Host line without tags
-		if strings.HasPrefix(line, "Host ") {
-			hostPart := strings.TrimSpace(line[5:]) // Remove "Host "
-			foundHostNames := strings.Fields(hostPart)
+		if foundHostNames, ok := hostLineNames(line); ok {
 
 			// Check if our target host is in this Host declaration
 			targetHostIndex := -1
@@ -1368,14 +1370,14 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 
 						// Copy the existing configuration for remaining hosts
 						i++ // Skip original Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							newLines = append(newLines, lines[i])
 							i++
 						}
 					} else {
 						// No remaining hosts, skip the entire block
 						i++ // Skip Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 							i++
 						}
 					}
@@ -1397,7 +1399,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 					i++
 
 					// Skip until we find the end of this host block
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 						i++
 					}
 
@@ -1656,9 +1658,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 			nextLine := strings.TrimSpace(lines[i+1])
 
 			// Check if this is a Host line that contains any of our original hosts
-			if strings.HasPrefix(nextLine, "Host ") {
-				hostPart := strings.TrimSpace(nextLine[5:]) // Remove "Host "
-				foundHostNames := strings.Fields(hostPart)
+			if foundHostNames, ok := hostLineNames(nextLine); ok {
 
 				// Check if any of our original hosts are in this Host declaration
 				hasOriginalHost := false
@@ -1679,7 +1679,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 
 					// Skip the old block entirely
 					i += 2 // Skip tags and Host line
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 						i++
 					}
 
@@ -1713,9 +1713,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 		}
 
 		// Check for Host line without tags (same logic)
-		if strings.HasPrefix(line, "Host ") {
-			hostPart := strings.TrimSpace(line[5:]) // Remove "Host "
-			foundHostNames := strings.Fields(hostPart)
+		if foundHostNames, ok := hostLineNames(line); ok {
 
 			// Check if any of our original hosts are in this Host declaration
 			hasOriginalHost := false
@@ -1736,7 +1734,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 
 				// Skip the old block entirely
 				i++ // Skip Host line
-				for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(strings.TrimSpace(lines[i]), "Host ") {
+				for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
 					i++
 				}
 
