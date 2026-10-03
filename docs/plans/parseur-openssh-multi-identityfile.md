@@ -235,6 +235,41 @@ ordre.
     `go run . <un hôte>` doit se connecter comme avant.
   - **Retour d'essai (Gu1llaum-3, 03/10/2026) :** essai fait sur la vraie config, « ça
     fonctionne ». Feu vert pour la vague 2.
+- 03/10/2026, vague 2 terminée (commits `5bada86`, `975db56`, `80c72d6`, `0348095`).
+  - **Livré :**
+    - `hostDirectiveLines` (`ssh.go`) écrit les directives d'un hôte pour `AddSSHHostToFile` et
+      les six branches de mise à jour (−259 lignes de copies) ;
+    - le champ `SSHHost.ExtraIdentities` : la première `IdentityFile` va dans `Identity`, les
+      suivantes dans ce champ, dans l'ordre. Elles sont réécrites juste après la clé principale ;
+    - le formulaire d'édition affiche chaque clé en plus sous « Identity File », avec la
+      mention « (read-only, kept on save) », et les transmet à l'enregistrement. La vue info
+      liste toutes les clés.
+  - **Tests :**
+    - `internal/config/identity_files_test.go` : AC-5 en lecture, et en sauvegarde par bloc
+      simple, par bloc à plusieurs hôtes et par déplacement (`HOME` temporaire). Rouge au commit
+      `975db56` (la première clé disparaissait sur les trois chemins), vert depuis `80c72d6` ;
+    - `internal/ui/identity_files_test.go` : AC-6, le formulaire garde la clé en plus quand on
+      change la clé principale, et les deux vues l'affichent.
+  - **Écarts au plan :**
+    - AC-6 est aussi couvert par des tests automatiques sur le modèle du formulaire, en plus de
+      l'essai manuel prévu. Le plan supposait qu'aucun test d'interface n'était possible ;
+    - `Identity` garde désormais la première clé. Si l'utilisateur vide le champ « Identity
+      File », la première clé en plus devient la clé principale à la lecture suivante.
+  - **Vérifié :**
+    - `go build`, `go vet` et `go test ./...`, code de retour 0 ;
+    - essai réel dans le TUI (tmux, `-c` sur une config de test, `HOME` isolé) : la vue info
+      montre les deux clés, le formulaire montre la clé en plus en lecture seule, et après
+      Ctrl+S le fichier est identique à l'original (`diff` vide).
+  - **Non vérifié :** l'enregistrement est refusé si la clé principale n'existe pas sur le
+    disque. C'est la validation existante (`validation.ValidateHost`), inchangée. Les clés en
+    plus ne sont pas validées.
+  - **Trouvé en route :** `internal/ui/file_selector.go` ne passe pas `gofmt` (antérieur, noté
+    hors plan).
+  - **Quoi essayer :** sur une copie de ta config, avec un hôte qui a deux `IdentityFile` :
+    `cp ~/.ssh/config /tmp/c && go run . -c /tmp/c`. Puis :
+    - `i` sur cet hôte : les deux clés apparaissent ;
+    - `e` : la seconde clé est listée sous « Identity File » ;
+    - Ctrl+S sans rien changer, puis `diff ~/.ssh/config /tmp/c` : rien ne doit avoir disparu.
 
 ## Hors plan
 
