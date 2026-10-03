@@ -260,6 +260,11 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 		}
 
 		key := strings.ToLower(parsed.keyword)
+		// Text after the keyword for directives OpenSSH does not tokenize
+		raw := parsed.rawNoComment
+		if isVerbatimKeyword(key) {
+			raw = parsed.raw
+		}
 		// sshm stays lenient: a single-value keyword written with several
 		// unquoted words (e.g. a path with spaces) keeps them all
 		value := strings.Join(parsed.args, " ")
@@ -346,16 +351,16 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 		case "proxyjump":
 			if currentHost != nil {
 				// OpenSSH takes ProxyJump raw, quotes included, without its trailing comment
-				currentHost.ProxyJump = parsed.rawArgs
+				currentHost.ProxyJump = raw
 			}
 		case "proxycommand":
 			if currentHost != nil {
 				// OpenSSH passes the rest of the line verbatim
-				currentHost.ProxyCommand = parsed.raw
+				currentHost.ProxyCommand = raw
 			}
 		case "remotecommand":
 			if currentHost != nil {
-				currentHost.RemoteCommand = parsed.raw
+				currentHost.RemoteCommand = raw
 			}
 		case "requesttty":
 			if currentHost != nil {
@@ -366,14 +371,10 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			if currentHost != nil {
 				// Store options in config format (key value), not command format,
 				// with their arguments as written so they are written back unchanged
-				args := parsed.rawArgs
-				if isVerbatimKeyword(key) {
-					args = parsed.raw
-				}
 				if currentHost.Options == "" {
-					currentHost.Options = parsed.keyword + " " + args
+					currentHost.Options = parsed.keyword + " " + raw
 				} else {
-					currentHost.Options += "\n" + parsed.keyword + " " + args
+					currentHost.Options += "\n" + parsed.keyword + " " + raw
 				}
 			}
 		}

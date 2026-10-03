@@ -7,10 +7,10 @@ import "strings"
 
 // configLine is one line of an ssh config file, split the way OpenSSH splits it.
 type configLine struct {
-	keyword string   // keyword as written (case preserved)
-	args    []string // arguments with quotes and escapes resolved, trailing comment dropped
-	raw     string   // text after the keyword and its separator, verbatim
-	rawArgs string   // raw without its trailing comment
+	keyword      string   // keyword as written (case preserved)
+	args         []string // arguments with quotes and escapes resolved, trailing comment dropped
+	raw          string   // text after the keyword and its separator, verbatim
+	rawNoComment string   // raw without its trailing comment
 }
 
 // isVerbatimKeyword reports whether OpenSSH takes the rest of the line verbatim
@@ -52,7 +52,7 @@ func splitConfigLine(line string) (configLine, bool) {
 		rest = strings.TrimLeft(rest[1:], " \t")
 	}
 	result.raw = rest
-	result.rawArgs = rest
+	result.rawNoComment = rest
 
 	i := 0
 	for i < len(rest) {
@@ -63,7 +63,7 @@ func splitConfigLine(line string) (configLine, bool) {
 			break
 		}
 		if rest[i] == '#' {
-			result.rawArgs = strings.TrimRight(rest[:i], " \t")
+			result.rawNoComment = strings.TrimRight(rest[:i], " \t")
 			break
 		}
 		var arg strings.Builder

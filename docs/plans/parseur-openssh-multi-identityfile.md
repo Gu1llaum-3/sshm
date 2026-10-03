@@ -221,7 +221,7 @@ PR à part), R-12 (même schéma que tout le formulaire), R-8, R-9 et R-11 (faus
   (`\\`, `\"` et `\'` y sont résolus), et le guillemet non fermé est décrit comme le code le
   fait (guillemet ouvrant retiré, reste de la ligne pris jusqu'à la fin).
 - [x] 4.2 Commentaire d'en-tête de `tokenize.go` (R-4).
-- [ ] 4.3 Petits nettoyages sans changement de comportement (R-7, R-10) : une seule liste des
+- [x] 4.3 Petits nettoyages sans changement de comportement (R-7, R-10) : une seule liste des
   mots-clés bruts, et `rawArgs` renommé pour dire qu'il est sans commentaire.
 
 ## Journal

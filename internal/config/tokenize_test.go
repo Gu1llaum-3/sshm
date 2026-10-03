@@ -26,6 +26,8 @@ var tokenizerCases = []struct {
 	{"escaped backslashes inside double quotes", `IdentityFile "C:\\x\\id"`, []string{`C:\x\id`}},
 	{"escaped quote inside double quotes", `IdentityFile "/a\"b"`, []string{`/a"b`}},
 	{"backslash-space kept inside single quotes", `IdentityFile '/a\ b'`, []string{`/a\ b`}},
+	{"escaped backslash inside single quotes", `IdentityFile '/a\\b'`, []string{`/a\b`}},
+	{"escaped quote inside single quotes", `IdentityFile '/a\'b'`, []string{`/a'b`}},
 	{"backslash-space kept inside double quotes", `IdentityFile "/a\ b"`, []string{`/a\ b`}},
 	{"quoted part glued to text", `IdentityFile "/a"b`, []string{`/ab`}},
 	{"tab inside double quotes", "IdentityFile \"/a\tb\"", []string{"/a\tb"}},
@@ -55,10 +57,10 @@ func TestSplitConfigLineFollowsOpenSSH(t *testing.T) {
 
 func TestSplitConfigLineKeywordAndRawText(t *testing.T) {
 	tests := []struct {
-		line    string
-		keyword string
-		raw     string
-		rawArgs string
+		line         string
+		keyword      string
+		raw          string
+		rawNoComment string
 	}{
 		{`ProxyCommand ssh -W "%h:%p" bastion # c`, "ProxyCommand", `ssh -W "%h:%p" bastion # c`, `ssh -W "%h:%p" bastion`},
 		{`ProxyCommand=ssh -W %h:%p bastion`, "ProxyCommand", `ssh -W %h:%p bastion`, `ssh -W %h:%p bastion`},
@@ -71,9 +73,9 @@ func TestSplitConfigLineKeywordAndRawText(t *testing.T) {
 			if !ok {
 				t.Fatalf("splitConfigLine(%q) returned false", tt.line)
 			}
-			if got.keyword != tt.keyword || got.raw != tt.raw || got.rawArgs != tt.rawArgs {
-				t.Errorf("got keyword=%q raw=%q rawArgs=%q, want %q %q %q",
-					got.keyword, got.raw, got.rawArgs, tt.keyword, tt.raw, tt.rawArgs)
+			if got.keyword != tt.keyword || got.raw != tt.raw || got.rawNoComment != tt.rawNoComment {
+				t.Errorf("got keyword=%q raw=%q rawNoComment=%q, want %q %q %q",
+					got.keyword, got.raw, got.rawNoComment, tt.keyword, tt.raw, tt.rawNoComment)
 			}
 		})
 	}
