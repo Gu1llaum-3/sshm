@@ -200,3 +200,40 @@ ordre.
   avec comparaison du fichier avant et après. (AC-9)
 
 ## Journal
+
+- 03/10/2026, vague 1 terminée (commits `8ad2763`, `0179635`, `6ae676f`, `93f8827`, branche
+  `fix/openssh-config-parsing` partie de `dev`).
+  - **Livré :**
+    - `internal/config/tokenize.go` : `splitConfigLine` (mot-clé, arguments, texte brut avec et
+      sans commentaire) et `isVerbatimKeyword` ;
+    - le parseur principal et la recherche rapide (`quickHostSearchInFile`) utilisent le
+      découpeur ;
+    - `Include` suit chaque argument comme un motif ;
+    - `ProxyCommand` et `RemoteCommand` gardent la ligne brute ;
+    - les directives inconnues gardent leurs arguments tels qu'écrits ;
+    - les `strings.Trim` au cas par cas (`Host`, `IdentityFile`, recherche rapide) sont retirés.
+  - **Tests :**
+    - `openssh_syntax_test.go` : AC-1 (19 cas), AC-2 (parseur et recherche rapide), AC-3,
+      AC-4 au niveau du parseur ;
+    - `tokenize_test.go` : table du découpeur, texte brut, lignes ignorées, cas tolérés, et le
+      test oracle qui compare avec `ssh -G`. Il a tourné avec OpenSSH 10.3 et n'a pas été
+      sauté.
+  - **Écarts au plan :**
+    - AC-2 est passé dès la tâche 1.3, parce que c'est le parseur principal qui découpe la
+      ligne `Include`. La tâche 1.4 a donc surtout porté sur la recherche rapide, avec son
+      propre test (`Host=…`, noms entre guillemets, `#` en fin de ligne) ;
+    - `processIncludeDirective` n'a pas eu besoin de changer : il reçoit désormais un seul motif
+      déjà découpé.
+  - **Vérifié :** `go build`, `go vet` et `go test ./...`, code de retour 0. Le test 1.1, rouge
+    au commit `8ad2763`, est vert depuis `6ae676f`.
+  - **Non vérifié :** le comportement sur une vraie config. C'est l'essai proposé ci-dessous.
+  - **Trouvé en route :** `gofmt` signale `internal/config/appconfig.go` et
+    `appconfig_test.go`, mal formatés avant ce travail. Hors plan, je n'y ai pas touché.
+  - **Quoi essayer :** `go run .` sur ta vraie config. La liste des hôtes doit être la même
+    qu'avant. Regarde en particulier les hôtes déclarés dans des fichiers inclus, et un hôte avec
+    un `ProxyCommand` ou un `IdentityFile` entre guillemets (vue info avec `i`). Puis
+    `go run . <un hôte>` doit se connecter comme avant.
+
+## Hors plan
+
+- `internal/config/appconfig.go` et `appconfig_test.go` ne passent pas `gofmt` (antérieur).
