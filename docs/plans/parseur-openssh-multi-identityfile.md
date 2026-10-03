@@ -176,7 +176,7 @@ ordre.
   (AC-5)
 - [x] 2.3 `ExtraIdentities` : la première clé dans `Identity`, les suivantes dans l'ordre,
   réécrites après la clé principale par la fonction de 2.1. Le test 2.2 passe. (AC-5)
-- [ ] 2.4 Formulaire d'édition et vue info : les clés en plus en lecture seule, et
+- [x] 2.4 Formulaire d'édition et vue info : les clés en plus en lecture seule, et
   `submitEditForm` les transmet sans les modifier. Vérification prévue : `go run . -c <config
   de test>`, avec une capture du formulaire et de la vue info pour un hôte à deux clés, puis
   l'enregistrement et la comparaison du fichier. (AC-6)
@@ -239,3 +239,4 @@ ordre.
 ## Hors plan
 
 - `internal/config/appconfig.go` et `appconfig_test.go` ne passent pas `gofmt` (antérieur).
+- `internal/ui/file_selector.go` ne passe pas `gofmt` non plus (antérieur).
