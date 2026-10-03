@@ -131,6 +131,16 @@ downloadBinary() {
 install() {
     printf "${YELLOW}Installing SSHM...${NC}\n"
     
+    # Create the install directory if needed, as the user first so that a
+    # directory under $HOME doesn't end up owned by root
+    if [ ! -d "$INSTALL_DIR" ]; then
+        mkdir -p "$INSTALL_DIR" 2>/dev/null || runAsRoot mkdir -p "$INSTALL_DIR"
+        if [ $? -ne 0 ]; then
+            printf "${RED}Failed to create $INSTALL_DIR${NC}\n"
+            exit 1
+        fi
+    fi
+    
     # Backup old version if it exists to prevent interference during installation
     OLD_BACKUP=""
     if [ -f "$EXECUTABLE_PATH" ]; then
