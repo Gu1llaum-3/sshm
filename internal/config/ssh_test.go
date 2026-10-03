@@ -1490,12 +1490,12 @@ func TestFormatSSHConfigValue(t *testing.T) {
 		{
 			name:     "path with quotes but no spaces",
 			input:    `/home/user/key"with"quotes`,
-			expected: `/home/user/key"with"quotes`,
+			expected: `"/home/user/key\"with\"quotes"`,
 		},
 		{
 			name:     "path with spaces and quotes",
 			input:    `/home/user/key "with" quotes`,
-			expected: `"/home/user/key "with" quotes"`,
+			expected: `"/home/user/key \"with\" quotes"`,
 		},
 		{
 			name:     "empty path",

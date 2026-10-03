@@ -45,6 +45,10 @@ ordre.
 - **Trois sortes de valeurs :**
   - **brutes** (`ProxyCommand`, `RemoteCommand`, `LocalCommand`, `KnownHostsCommand`) : le reste
     de la ligne tel quel, commentaires compris, comme le fait OpenSSH ;
+  - **brute sans commentaire** (`ProxyJump`) : le reste de la ligne tel quel, guillemets
+    compris, sans le commentaire de fin. OpenSSH ne découpe pas `ProxyJump` : `ProxyJump
+    "user@bastion"` y donne `"user@bastion"`. Amendement du 03/10/2026, décidé par Gu1llaum-3
+    pendant la tâche 3.3 (voir le journal) ;
   - **listes** (`Host`, `Include`) : un mot par motif ou par chemin ;
   - **simples** (toutes les autres).
 - **sshm reste tolérant là où OpenSSH refuse la ligne.**
@@ -67,8 +71,9 @@ ordre.
 - **L'écriture est symétrique de la lecture.** `formatSSHConfigValue` met des guillemets dès que
   le découpeur couperait ou transformerait la valeur (espace, tabulation, `#` en tête,
   guillemet, antislash suivi d'un caractère spécial), et échappe ce qu'il faut. La règle est
-  appliquée à `IdentityFile`, aux clés en plus, à `User`, `HostName` et `ProxyJump`, ainsi
-  qu'aux noms de `Host`. `ProxyCommand` et `RemoteCommand` restent bruts. Le test existant
+  appliquée à `IdentityFile`, aux clés en plus, à `User` et `HostName`, ainsi qu'aux noms de
+  `Host`. `ProxyCommand`, `RemoteCommand` et `ProxyJump` restent bruts (amendement du
+  03/10/2026 pour `ProxyJump`). Le test existant
   `ssh_test.go:1508`, qui valide aujourd'hui une sortie fausse, est corrigé.
 - **`ssh -G` sert d'oracle dans les tests.** Un test compare le découpeur et l'aller-retour
   d'écriture à `ssh -G -F <fichier>`. Il est sauté (`t.Skip`) si `ssh` est absent.
@@ -117,7 +122,9 @@ ordre.
 - AC-8 : pour un jeu de valeurs piégées (espace, deux espaces, tabulation, `"`, `'`, `\`, `#` en
   tête, chemin Windows, chemin Windows avec espace), écrire la valeur puis la relire donne la
   même valeur, avec sshm comme avec `ssh -G`. Cela vaut pour `IdentityFile`, les clés en plus,
-  `User`, `HostName` et `ProxyJump`.
+  `User` et `HostName`. Pour `ProxyJump` (amendement du 03/10/2026), une valeur valide
+  (`user@bastion:2222,admin@other`, `a, b`) fait l'aller-retour à l'identique avec sshm et
+  `ssh -G`, et `ProxyJump "x" # c` est relu `"x"` comme par `ssh`.
 - AC-9 : `go build`, `go vet` et toute la suite de tests passent. Les tests existants ne
   changent pas, sauf l'attente fausse de `ssh_test.go:1508`.
 
@@ -189,9 +196,10 @@ ordre.
 - [x] 3.2 Les fonctions qui retrouvent un bloc (`UpdateSSHHostInFile`, `UpdateMultiHostBlock`,
   `DeleteSSHHostFromFileWithLine`, `HostExistsInSpecificFile`, `IsPartOfMultiHostDeclaration`)
   reconnaissent les lignes `Host` avec le découpeur. Le test 3.1 passe. (AC-7)
-- [ ] 3.3 Écriture symétrique : `formatSSHConfigValue` met des guillemets et échappe selon les
+- [x] 3.3 Écriture symétrique : `formatSSHConfigValue` met des guillemets et échappe selon les
   règles du découpeur. La règle est appliquée par la fonction de 2.1 à `IdentityFile`, aux clés
-  en plus, à `User`, `HostName`, `ProxyJump` et aux noms de `Host`. L'attente fausse de
+  en plus, à `User`, `HostName` et aux noms de `Host`. `ProxyJump` est lu et écrit brut
+  (amendement du 03/10/2026). L'attente fausse de
   `ssh_test.go:1508` est corrigée. Les tests d'aller-retour avec sshm et avec `ssh -G` passent.
   (AC-8)
 - [ ] 3.4 Vérification d'ensemble : `go build`, `go vet` et `go test ./...` ; tests oracle lancés
