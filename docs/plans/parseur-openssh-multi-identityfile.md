@@ -37,7 +37,9 @@ ordre.
   - les guillemets doubles et simples regroupent, et des morceaux collés se concatènent
     (`"/a"b` donne `/ab`) ;
   - entre guillemets doubles, `\"` donne `"` et `\ ` reste `\ ` ;
-  - entre guillemets simples, tout reste littéral ;
+  - entre guillemets simples, c'est pareil : `\\`, `\"` et `\'` sont résolus, et `\ ` reste
+    `\ ` (corrigé le 03/10/2026, R-2 : la première version disait « tout reste littéral »,
+    ce que `ssh -G` dément) ;
   - hors guillemets, `\` n'échappe que l'espace, `"`, `'` et `\`. Tout autre antislash est
     gardé, donc `C:\Users\me\id` reste intact ;
   - un `#` en début de mot ouvre un commentaire jusqu'à la fin de la ligne. Un `#` au milieu
@@ -55,7 +57,9 @@ ordre.
   - **Valeur simple en plusieurs mots :** les mots sont recollés par un espace. C'est le
     comportement d'aujourd'hui, qui répare `IdentityFile C:\My Drive\key` écrit sans guillemets
     (le cas de l'issue #16) : l'écriture remet ensuite les guillemets.
-  - **Guillemet non fermé :** le reste de la ligne est pris tel quel, sans erreur.
+  - **Guillemet non fermé :** le guillemet ouvrant est retiré et le reste de la ligne est pris
+    jusqu'à la fin, échappements résolus, sans erreur (`"/a b` donne `/a b`). Précisé le
+    03/10/2026 (R-3).
 - **Les directives inconnues sont rangées dans `Options` avec leurs arguments bruts**
   (guillemets compris, commentaire retiré), au lieu de mots recollés. L'aller-retour sur le
   disque est ainsi exact.
@@ -108,7 +112,7 @@ ordre.
   `ProxyCommand=none`, est relu dans `ProxyCommand`. Il ne se retrouve ni dans `Options`, ni
   perdu.
 - AC-4 : les cas tolérés ne plantent pas et suivent la décision : `IdentityFile C:\My Drive\key`
-  sans guillemets donne `C:\My Drive\key`, et un guillemet non fermé donne le reste de la ligne.
+  sans guillemets donne `C:\My Drive\key`, et un guillemet non fermé donne le reste de la ligne sans le guillemet ouvrant.
 - AC-5 : un hôte avec `IdentityFile ~/.ssh/a`, puis `IdentityFile "~/.ssh/b c"`, puis
   `ForwardAgent yes` est lu avec `Identity="~/.ssh/a"` et `ExtraIdentities=["~/.ssh/b c"]`.
   L'enregistrer sans changement par `UpdateSSHHostInFile` (bloc simple) et par
@@ -206,6 +210,19 @@ ordre.
   avec `ssh` présent ; essai manuel du TUI sur une copie de config réelle (ajout, modification,
   déplacement et suppression d'un hôte à deux clés et d'un hôte aux valeurs entre guillemets),
   avec comparaison du fichier avant et après. (AC-9)
+
+## Vague 4 : retours de revue
+
+Remarques retenues par Gu1llaum-3 le 03/10/2026 : R-2, R-3, R-4, R-7, R-10. Écartées : R-1
+(écart justifié, déjà noté), R-5 et R-6 (structure antérieure au plan, notées hors plan pour une
+PR à part), R-12 (même schéma que tout le formulaire), R-8, R-9 et R-11 (fausses).
+
+- [x] 4.1 Texte du plan (R-2, R-3) : la décision sur les guillemets simples suit OpenSSH
+  (`\\`, `\"` et `\'` y sont résolus), et le guillemet non fermé est décrit comme le code le
+  fait (guillemet ouvrant retiré, reste de la ligne pris jusqu'à la fin).
+- [ ] 4.2 Commentaire d'en-tête de `tokenize.go` (R-4).
+- [ ] 4.3 Petits nettoyages sans changement de comportement (R-7, R-10) : une seule liste des
+  mots-clés bruts, et `rawArgs` renommé pour dire qu'il est sans commentaire.
 
 ## Journal
 
@@ -329,10 +346,31 @@ ordre.
   - **Quoi essayer :** `cp ~/.ssh/config /tmp/c && go run . -c /tmp/c`, puis modifier un hôte
     dont la ligne est écrite autrement que `Host nom` (minuscule, `=`, guillemets) : la
     modification doit passer, sans « host not found ».
+- 03/10/2026, relecture de fin de plan (`/review`, axe spec et axe conventions) :
+  - R-1 (confirmée, justifiée) : deux attentes de `TestFormatSSHConfigValue` modifiées au lieu
+    d'une (AC-9). Déjà noté dans les écarts de la vague 3 ;
+  - R-2 (confirmée) : la décision « entre guillemets simples, tout reste littéral » est
+    inexacte. OpenSSH résout `\\`, `\"` et `\'` entre guillemets simples, comme le découpeur
+    (cinq cas comparés avec `ssh -G`). Le texte du plan est à corriger, pas le code ;
+  - R-3 (confirmée, ambiguïté) : avec un guillemet non fermé, le code retire le guillemet
+    ouvrant (`"/a b` donne `/a b`) alors que le plan dit « tel quel » ;
+  - R-4 (confirmée) : `tokenize.go` n'a pas le commentaire d'en-tête demandé par
+    `.github/copilot-instructions.md:410`, qu'aucun fichier du dépôt ne suit ;
+  - R-5, R-6 (confirmées) : parcours de fin de bloc dupliqué 14 fois, branches avec et sans
+    `# Tags:` dupliquées dans `ssh.go`. Structure antérieure au plan ;
+  - R-7 (confirmée, mineure) : `proxycommand` et `remotecommand` répètent la liste de
+    `isVerbatimKeyword` ;
+  - R-8 (fausse) : `isHostLine` est un prédicat de lecture, pas un intermédiaire ;
+  - R-9 (fausse) : `Identity` et `ExtraIdentities` séparés est une décision du plan ;
+  - R-10 (confirmée, mineure) : `raw` et `rawArgs` ne disent pas lequel garde le commentaire ;
+  - R-11 (fausse) : `formatIdentities` suit le modèle des fonctions voisines de `info_form.go` ;
+  - R-12 (confirmée) : indice `3` du formulaire, comme tout le formulaire existant.
 
 ## Hors plan
 
 - `internal/config/appconfig.go` et `appconfig_test.go` ne passent pas `gofmt` (antérieur).
 - `internal/ui/file_selector.go` ne passe pas `gofmt` non plus (antérieur).
+- `ssh.go` : le parcours de fin de bloc est dupliqué 14 fois, et les branches avec et sans
+  `# Tags:` le sont aussi (R-5, R-6). À factoriser dans une PR à part.
 - Enregistrer un hôte depuis le formulaire perd les commentaires de fin de ligne à l'intérieur
   du bloc, et normalise `host`/`Host=` en `Host` (antérieur).
