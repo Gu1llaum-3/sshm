@@ -183,7 +183,7 @@ ordre.
 
 ## Vague 3 : retrouver les blocs et écrire symétriquement
 
-- [ ] 3.1 Test qui reproduit « host not found » et échoue : modification et suppression de
+- [x] 3.1 Test qui reproduit « host not found » et échoue : modification et suppression de
   blocs `host foo`, `Host<tab>foo`, `Host=foo` et `Host "foo"`, plus le cas de deux hôtes du
   même nom dans deux fichiers. (AC-7)
 - [ ] 3.2 Les fonctions qui retrouvent un bloc (`UpdateSSHHostInFile`, `UpdateMultiHostBlock`,
