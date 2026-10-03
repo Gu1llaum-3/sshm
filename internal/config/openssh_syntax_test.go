@@ -66,6 +66,25 @@ func TestParseFollowsOpenSSHSyntax_AC1(t *testing.T) {
 	}
 }
 
+// AC-4: where OpenSSH rejects the line, the parser stays lenient
+func TestParseIsLenientWhereOpenSSHRejects_AC4(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"unquoted path with spaces is kept whole", `    IdentityFile C:\My Drive\key`, `C:\My Drive\key`},
+		{"unterminated quote keeps the rest", `    IdentityFile "/a b`, `/a b`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseSingleHost(t, tt.line).Identity; got != tt.want {
+				t.Errorf("Identity = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // AC-2: Include accepts quoted paths with spaces and several patterns
 func TestIncludeQuotedPathsAndSeveralPatterns_AC2(t *testing.T) {
 	tempDir := t.TempDir()

@@ -252,29 +252,28 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			continue
 		}
 
-		// Ignore other comments
-		if strings.HasPrefix(line, "#") {
+		// Split the line the way OpenSSH does; this also skips other comments
+		parsed, ok := splitConfigLine(line)
+		if !ok || len(parsed.args) == 0 {
 			continue
 		}
 
-		// Split line into words
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		key := strings.ToLower(parts[0])
-		value := strings.Join(parts[1:], " ")
+		key := strings.ToLower(parsed.keyword)
+		// sshm stays lenient: a single-value keyword written with several
+		// unquoted words (e.g. a path with spaces) keeps them all
+		value := strings.Join(parsed.args, " ")
 
 		switch key {
 		case "include":
-			// Handle Include directive
-			includeHosts, err := processIncludeDirective(value, configPath, processedFiles)
-			if err != nil {
-				// Don't fail the entire parse if include fails, just skip it
-				continue
+			// Handle Include directive, one glob pattern per argument
+			for _, pattern := range parsed.args {
+				includeHosts, err := processIncludeDirective(pattern, configPath, processedFiles)
+				if err != nil {
+					// Don't fail the entire parse if include fails, just skip it
+					continue
+				}
+				hosts = append(hosts, includeHosts...)
 			}
-			hosts = append(hosts, includeHosts...)
 		case "host":
 			// New host, save previous one if it exists
 			if currentHost != nil {
@@ -291,16 +290,9 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 				}
 			}
 
-			// Parse multiple host names from the Host line
-			hostNames := strings.Fields(value)
-
 			// Skip hosts with wildcards (*, ?) as they are typically patterns, not actual hosts
-			// Also remove surrounding quotes from host names
 			var validHostNames []string
-			for _, hostName := range hostNames {
-				// Remove surrounding double quotes if present
-				hostName = strings.Trim(hostName, `"`)
-
+			for _, hostName := range parsed.args {
 				if !strings.ContainsAny(hostName, "*?") {
 					validHostNames = append(validHostNames, hostName)
 				}
@@ -343,8 +335,7 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 		case "identityfile":
 			if currentHost != nil {
-				// Remove surrounding double quotes if present
-				currentHost.Identity = strings.Trim(value, `"`)
+				currentHost.Identity = value
 			}
 		case "proxyjump":
 			if currentHost != nil {
@@ -352,11 +343,12 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 		case "proxycommand":
 			if currentHost != nil {
-				currentHost.ProxyCommand = value
+				// OpenSSH passes the rest of the line verbatim
+				currentHost.ProxyCommand = parsed.raw
 			}
 		case "remotecommand":
 			if currentHost != nil {
-				currentHost.RemoteCommand = value
+				currentHost.RemoteCommand = parsed.raw
 			}
 		case "requesttty":
 			if currentHost != nil {
@@ -364,12 +356,17 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 			}
 		default:
 			// Handle other SSH options
-			if currentHost != nil && strings.TrimSpace(line) != "" {
-				// Store options in config format (key value), not command format
+			if currentHost != nil {
+				// Store options in config format (key value), not command format,
+				// with their arguments as written so they are written back unchanged
+				args := parsed.rawArgs
+				if isVerbatimKeyword(key) {
+					args = parsed.raw
+				}
 				if currentHost.Options == "" {
-					currentHost.Options = parts[0] + " " + value
+					currentHost.Options = parsed.keyword + " " + args
 				} else {
-					currentHost.Options += "\n" + parts[0] + " " + value
+					currentHost.Options += "\n" + parsed.keyword + " " + args
 				}
 			}
 		}

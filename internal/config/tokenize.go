@@ -10,6 +10,16 @@ type configLine struct {
 	rawArgs string   // raw without its trailing comment
 }
 
+// isVerbatimKeyword reports whether OpenSSH takes the rest of the line verbatim
+// for this lowercased keyword, comments and quotes included.
+func isVerbatimKeyword(keyword string) bool {
+	switch keyword {
+	case "proxycommand", "remotecommand", "localcommand", "knownhostscommand":
+		return true
+	}
+	return false
+}
+
 // splitConfigLine splits a config line into its keyword and arguments.
 // It returns false for blank lines and full-line comments.
 //
