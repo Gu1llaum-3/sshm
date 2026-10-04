@@ -6,7 +6,7 @@
 
 # 🚀 SSHM - SSH Manager
 
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
 [![Release](https://img.shields.io/github/v/release/Gu1llaum-3/sshm?style=for-the-badge)](https://github.com/Gu1llaum-3/sshm/releases)
 [![License](https://img.shields.io/github/license/Gu1llaum-3/sshm?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=for-the-badge)](https://github.com/Gu1llaum-3/sshm/releases)
@@ -724,7 +724,7 @@ If no configuration file exists, SSHM will automatically create one with default
 
 ### Prerequisites
 
-- Go 1.23+ 
+- Go 1.27+ 
 - Git
 
 ### Build from Source
