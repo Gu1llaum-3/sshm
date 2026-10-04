@@ -137,6 +137,13 @@ func TestProxyJumpIsKeptRaw_AC8(t *testing.T) {
 			if sshPath == "" {
 				return
 			}
+			// Some OpenSSH versions reject the value even written by hand
+			// (9.6 rejects "a, b"): sshm writes it raw, so there is nothing to compare
+			handWritten := filepath.Join(t.TempDir(), "config")
+			writeFile(t, handWritten, "Host h\n    ProxyJump "+value+"\n")
+			if out, err := exec.Command(sshPath, "-F", handWritten, "-G", "h").CombinedOutput(); err != nil {
+				t.Skipf("this ssh rejects ProxyJump %s written by hand: %s", value, out)
+			}
 			out, err := exec.Command(sshPath, "-F", configFile, "-G", "h").CombinedOutput()
 			if err != nil {
 				t.Fatalf("ssh -G failed: %v\n%s", err, out)
