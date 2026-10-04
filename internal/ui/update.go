@@ -79,6 +79,11 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, checkVersionCmd(m.currentVersion))
 	}
 
+	// Show the host status right away unless the config turns it off
+	if m.appConfig.IsPingOnStart() {
+		cmds = append(cmds, m.startPingAllCmd())
+	}
+
 	return tea.Batch(cmds...)
 }
 

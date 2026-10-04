@@ -20,8 +20,10 @@ type KeyBindings struct {
 type AppConfig struct {
 	CheckForUpdates *bool `json:"check_for_updates,omitempty"`
 	// FocusSearchOnStart - if false, the host table has the focus at startup instead of the search
-	FocusSearchOnStart *bool       `json:"focus_search_on_start,omitempty"`
-	KeyBindings        KeyBindings `json:"key_bindings"`
+	FocusSearchOnStart *bool `json:"focus_search_on_start,omitempty"`
+	// PingOnStart - if false, hosts are not pinged when the TUI starts (p still pings them)
+	PingOnStart *bool       `json:"ping_on_start,omitempty"`
+	KeyBindings KeyBindings `json:"key_bindings"`
 }
 
 // IsFocusSearchOnStart returns true if the search input has the focus at startup
@@ -30,6 +32,14 @@ func (c *AppConfig) IsFocusSearchOnStart() bool {
 		return true
 	}
 	return *c.FocusSearchOnStart
+}
+
+// IsPingOnStart returns true if hosts are pinged when the TUI starts (default: true)
+func (c *AppConfig) IsPingOnStart() bool {
+	if c == nil || c.PingOnStart == nil {
+		return true
+	}
+	return *c.PingOnStart
 }
 
 // IsUpdateCheckEnabled returns true if the update check is enabled (default: true)

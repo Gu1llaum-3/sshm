@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -296,10 +297,10 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 				}
 			}
 
-			// Skip hosts with wildcards (*, ?) as they are typically patterns, not actual hosts
+			// Skip patterns (wildcards and negations), which are not actual hosts
 			var validHostNames []string
 			for _, hostName := range parsed.args {
-				if !strings.ContainsAny(hostName, "*?") {
+				if isConcreteHostName(hostName) {
 					validHostNames = append(validHostNames, hostName)
 				}
 			}
@@ -694,15 +695,21 @@ func AddSSHHostToFile(host SSHHost, configPath string) error {
 // ParseSSHOptionsFromCommand converts SSH command line options to config format
 // Input: "-o Compression=yes -o ServerAliveInterval=60" or "ForwardX11 true" or "Compression yes"
 // Output: "Compression yes\nServerAliveInterval 60"
+//
+// The text is split the way OpenSSH splits a config line, so a value quoted
+// by FormatSSHOptionsForCommand comes back unchanged. "-o" is recognised as a
+// word, and only the first "=" separates the option from its value.
 func ParseSSHOptionsFromCommand(options string) string {
+	options = strings.TrimSpace(options)
 	if options == "" {
 		return ""
 	}
 
-	options = strings.TrimSpace(options)
+	parsed, _ := splitConfigLine("options " + options)
+	words := parsed.args
 
-	// If it doesn't contain -o, assume it's already in config format
-	if !strings.Contains(options, "-o") {
+	// Without any -o, assume it's already in config format
+	if !slices.ContainsFunc(words, isSSHOptionFlag) {
 		// Just normalize spaces and ensure newlines between options
 		lines := strings.Split(options, "\n")
 		var result []string
@@ -721,25 +728,45 @@ func ParseSSHOptionsFromCommand(options string) string {
 	}
 
 	var result []string
-	parts := strings.Split(options, "-o")
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
+	for i := 0; i < len(words); i++ {
+		word := words[i]
+		var option string
+		switch {
+		case word == "-o" && i+1 < len(words):
+			i++
+			option = words[i]
+		case isSSHOptionFlag(word) && word != "-o":
+			option = word[2:] // -oKey=value
+		case len(result) > 0:
+			// A stray word belongs to the previous option
+			result[len(result)-1] += " " + word
 			continue
+		default:
+			// Words before the first -o are an option in config format
+			option = word
 		}
-
-		// Replace = with space for SSH config format
-		option := strings.ReplaceAll(part, "=", " ")
+		// Only the first "=" separates the option from its value
+		if key, value, found := strings.Cut(option, "="); found {
+			option = key + " " + value
+		}
 		result = append(result, option)
 	}
 
 	return strings.Join(result, "\n")
 }
 
+// isSSHOptionFlag reports whether a word introduces an option: "-o" alone, or
+// "-oKey=value" (unlike a value such as "-opt")
+func isSSHOptionFlag(word string) bool {
+	return word == "-o" || (strings.HasPrefix(word, "-o") && strings.Contains(word, "="))
+}
+
 // FormatSSHOptionsForCommand converts SSH config options to command line format
 // Input: "Compression yes\nServerAliveInterval 60"
 // Output: "-o Compression=yes -o ServerAliveInterval=60"
+//
+// An option whose value would be split or changed when read back (spaces,
+// quotes...) is quoted, so that ParseSSHOptionsFromCommand returns it unchanged.
 func FormatSSHOptionsForCommand(options string) string {
 	if options == "" {
 		return ""
@@ -760,16 +787,44 @@ func FormatSSHOptionsForCommand(options string) string {
 			continue
 		}
 
-		// Replace space with = for command line format
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) == 2 {
-			result = append(result, fmt.Sprintf("-o %s=%s", parts[0], parts[1]))
-		} else {
-			result = append(result, fmt.Sprintf("-o %s", line))
+		// Replace the first space with = for command line format
+		if key, value, found := strings.Cut(line, " "); found {
+			line = key + "=" + value
 		}
+		result = append(result, "-o "+formatSSHConfigValue(line))
 	}
 
 	return strings.Join(result, " ")
+}
+
+// isConcreteHostName reports whether a Host pattern names an actual host:
+// patterns with wildcards (*, ?) and negations (!name) do not
+func isConcreteHostName(name string) bool {
+	return !strings.ContainsAny(name, "*?") && !isNegatedPattern(name)
+}
+
+// isNegatedPattern reports whether a Host pattern is a negation (!name)
+func isNegatedPattern(pattern string) bool {
+	return strings.HasPrefix(pattern, "!")
+}
+
+// negatedPatterns returns the negations (!name) among Host patterns, which a
+// rewritten Host line must keep
+func negatedPatterns(patterns []string) []string {
+	var negated []string
+	for _, pattern := range patterns {
+		if isNegatedPattern(pattern) {
+			negated = append(negated, pattern)
+		}
+	}
+	return negated
+}
+
+// hostLineKeepingNegations returns the Host line for the given names, followed
+// by the negations of the Host line it replaces
+func hostLineKeepingNegations(names []string, replacedPatterns []string) string {
+	patterns := append(append([]string{}, names...), negatedPatterns(replacedPatterns)...)
+	return "Host " + formatHostNames(patterns...)
 }
 
 // hostLineNames returns the host patterns of a Host line, read the way the
@@ -928,8 +983,8 @@ func quickHostSearchInFile(hostName string, configPath string, processedFiles ma
 		case "host":
 			// Check if our target host is in this Host declaration
 			for _, candidateHostName := range parsed.args {
-				// Skip hosts with wildcards (*, ?) as they are typically patterns
-				if !strings.ContainsAny(candidateHostName, "*?") && candidateHostName == hostName {
+				// Skip patterns (wildcards and negations)
+				if isConcreteHostName(candidateHostName) && candidateHostName == hostName {
 					return true, nil // Found the host!
 				}
 			}
@@ -998,7 +1053,14 @@ func IsPartOfMultiHostDeclaration(hostName string, configPath string) (bool, []s
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		if hostNames, ok := hostLineNames(line); ok {
+		if patterns, ok := hostLineNames(line); ok {
+			// Negations (!name) are not hosts: "Host web !web-old" is a single-host block
+			var hostNames []string
+			for _, name := range patterns {
+				if !isNegatedPattern(name) {
+					hostNames = append(hostNames, name)
+				}
+			}
 
 			// Check if our target host is in this Host declaration
 			for _, name := range hostNames {
@@ -1126,7 +1188,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						if len(newHost.Tags) > 0 {
 							newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 						}
-						newLines = append(newLines, "Host "+formatHostNames(newHost.Name))
+						newLines = append(newLines, hostLineKeepingNegations([]string{newHost.Name}, foundHostNames))
 						newLines = append(newLines, hostDirectiveLines(newHost)...)
 
 						// Add empty line after the host configuration for separation
@@ -1212,7 +1274,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					if len(newHost.Tags) > 0 {
 						newLines = append(newLines, "# Tags: "+strings.Join(newHost.Tags, ", "))
 					}
-					newLines = append(newLines, "Host "+formatHostNames(newHost.Name))
+					newLines = append(newLines, hostLineKeepingNegations([]string{newHost.Name}, foundHostNames))
 					newLines = append(newLines, hostDirectiveLines(newHost)...)
 
 					// Add empty line after the host configuration for separation
@@ -1735,7 +1797,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 					}
 
 					// Add Host line with new host names
-					newLines = append(newLines, "Host "+formatHostNames(newHosts...))
+					newLines = append(newLines, hostLineKeepingNegations(newHosts, foundHostNames))
 
 					// Add common properties
 					newLines = append(newLines, hostDirectiveLines(commonProperties)...)
@@ -1790,7 +1852,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 				}
 
 				// Add Host line with new host names
-				newLines = append(newLines, "Host "+formatHostNames(newHosts...))
+				newLines = append(newLines, hostLineKeepingNegations(newHosts, foundHostNames))
 
 				// Add common properties
 				newLines = append(newLines, hostDirectiveLines(commonProperties)...)
