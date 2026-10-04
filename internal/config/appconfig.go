@@ -18,8 +18,18 @@ type KeyBindings struct {
 
 // AppConfig represents the main application configuration
 type AppConfig struct {
-	CheckForUpdates *bool       `json:"check_for_updates,omitempty"`
-	KeyBindings     KeyBindings `json:"key_bindings"`
+	CheckForUpdates *bool `json:"check_for_updates,omitempty"`
+	// FocusSearchOnStart - if false, the host table has the focus at startup instead of the search
+	FocusSearchOnStart *bool       `json:"focus_search_on_start,omitempty"`
+	KeyBindings        KeyBindings `json:"key_bindings"`
+}
+
+// IsFocusSearchOnStart returns true if the search input has the focus at startup
+func (c *AppConfig) IsFocusSearchOnStart() bool {
+	if c == nil || c.FocusSearchOnStart == nil {
+		return true
+	}
+	return *c.FocusSearchOnStart
 }
 
 // IsUpdateCheckEnabled returns true if the update check is enabled (default: true)

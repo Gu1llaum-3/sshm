@@ -98,7 +98,14 @@ Launch SSHM without arguments to enter the beautiful TUI interface:
 sshm
 ```
 
-**Navigation:**
+**Search (focused at startup):**
+- Type to filter hosts by name, hostname or tag
+- `↑/↓` or `Ctrl+P/Ctrl+N` - Select a host without leaving the search
+- `Enter` - Connect to the selected host
+- `Esc` - Clear the search (quits when the search is empty)
+- `Tab` - Switch to the host table, where the shortcuts below work
+
+**Host table:**
 - `↑/↓` or `j/k` - Navigate hosts
 - `Enter` - Connect to selected host
 - `a` - Add new host
@@ -108,7 +115,7 @@ sshm
 - `f` - Port forwarding setup
 - `H` - Toggle hidden hosts visibility
 - `q` - Quit
-- `/` - Search/filter hosts
+- `/` or `Tab` - Back to the search
 
 **Real-time Status Indicators:**
 - 🟢 **Online** - Host is reachable via SSH
@@ -120,9 +127,6 @@ sshm
 - `s` - Switch between sorting modes (name ↔ last login)
 - `n` - Sort by **name** (alphabetical)
 - `r` - Sort by **recent** (last login time)
-- `Tab` - Cycle between filtering modes
-- Filter by **name** (default) - Search through host names
-- Filter by **last login** - Sort and filter by most recently used connections
 
 The interactive forms will guide you through configuration:
 - **Hostname/IP** - Server address
@@ -693,6 +697,7 @@ SSHM supports a configuration file to customize its behavior, including key bind
 ```json
 {
   "check_for_updates": false,
+  "focus_search_on_start": false,
   "key_bindings": {
     "quit_keys": ["q", "ctrl+c"],
     "disable_esc_quit": true
@@ -702,6 +707,7 @@ SSHM supports a configuration file to customize its behavior, including key bind
 
 **Available Options:**
 - **check_for_updates**: Boolean to enable or disable the automatic update check at startup. Default: `true`. Set to `false` on air-gapped or offline machines to avoid connection delays.
+- **focus_search_on_start**: Boolean to choose where the focus is when the TUI starts. Default: `true` (the search bar). Set to `false` to start on the host table; the `-s` / `--search` flag still starts on the search bar.
 - **quit_keys**: Array of keys that will quit the application. Default: `["q", "ctrl+c"]`
 - **disable_esc_quit**: Boolean flag to disable ESC key from quitting the application. Default: `false`
 

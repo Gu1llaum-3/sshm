@@ -32,6 +32,10 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 		appConfig.CheckForUpdates = &f
 	}
 
+	// The search has the focus at startup unless the config turns it off;
+	// the -s flag forces it anyway
+	searchMode = searchMode || appConfig.IsFocusSearchOnStart()
+
 	// Initialize the history manager
 	historyManager, err := history.NewHistoryManager()
 	if err != nil {
@@ -131,7 +135,7 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
-		table.WithFocused(true),
+		table.WithFocused(!searchMode),
 		table.WithHeight(10), // Initial height, will be recalculated dynamically
 	)
 

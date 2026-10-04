@@ -459,6 +459,12 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.table.Focus()
 			return m, nil
 		}
+		// In the search, Esc clears the text before it can quit
+		if key == "esc" && m.searchMode && m.searchInput.Value() != "" {
+			m.searchInput.SetValue("")
+			m.applySearchFilter()
+			return m, nil
+		}
 		// Use configurable key bindings for quit
 		if m.appConfig != nil && m.appConfig.KeyBindings.ShouldQuitOnKey(key) {
 			return m, tea.Quit
@@ -472,42 +478,34 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "/", "ctrl+f":
 		if !m.searchMode && !m.deleteMode {
-			// Enter search mode
-			m.searchMode = true
-			m.updateTableStyles()
-			m.table.Blur()
-			m.searchInput.Focus()
 			// Don't trigger filtering when entering search mode - wait for user input
-			return m, textinput.Blink
+			return m, m.focusSearch()
+		}
+	case "up", "ctrl+p":
+		if m.searchMode {
+			// Move the selection while the focus stays in the search input
+			m.table.MoveUp(1)
+			return m, nil
+		}
+	case "down", "ctrl+n":
+		if m.searchMode {
+			m.table.MoveDown(1)
+			return m, nil
 		}
 	case "tab":
 		if !m.deleteMode {
 			// Switch focus between search input and table
 			if m.searchMode {
-				// Switch from search to table
-				m.searchMode = false
-				m.updateTableStyles()
-				m.searchInput.Blur()
-				m.table.Focus()
-			} else {
-				// Switch from table to search
-				m.searchMode = true
-				m.updateTableStyles()
-				m.table.Blur()
-				m.searchInput.Focus()
-				// Don't trigger filtering when switching to search mode
-				return m, textinput.Blink
+				m.focusTable()
+				return m, nil
 			}
-			return m, nil
+			// Don't trigger filtering when switching to search mode
+			return m, m.focusSearch()
 		}
 	case "enter":
 		if m.searchMode {
-			// Validate search and return to table mode to allow commands
-			m.searchMode = false
-			m.updateTableStyles()
-			m.searchInput.Blur()
-			m.table.Focus()
-			return m, nil
+			// Connect to the selected result; without result, stay in the search
+			return m, m.connectToSelectedHost()
 		} else if m.deleteMode {
 			// Confirm deletion
 			var err error
@@ -553,33 +551,8 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.deleteHost = nil
 			m.table.Focus()
 			return m, nil
-		} else {
-			// Connect to the selected host
-			selected := m.table.SelectedRow()
-			if len(selected) > 0 {
-				hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
-
-				// Record the connection in history
-				if m.historyManager != nil {
-					err := m.historyManager.RecordConnection(hostName)
-					if err != nil {
-						// Log the error but don't prevent the connection
-						fmt.Printf("Warning: Could not record connection history: %v\n", err)
-					}
-				}
-
-				// Build the SSH command with the appropriate config file
-				var sshCmd *exec.Cmd
-				if m.configFile != "" {
-					sshCmd = exec.Command("ssh", "-F", m.configFile, hostName)
-				} else {
-					sshCmd = exec.Command("ssh", hostName)
-				}
-
-				return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {
-					return tea.Quit()
-				})
-			}
+		} else if cmd := m.connectToSelectedHost(); cmd != nil {
+			return m, cmd
 		}
 	case "e":
 		if !m.searchMode && !m.deleteMode {
@@ -769,21 +742,71 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput, cmd = m.searchInput.Update(msg)
 		// Update filtered hosts only if the search value has changed
 		if m.searchInput.Value() != oldValue {
-			currentCursor := m.table.Cursor()
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
-			m.updateTableRows()
-			// If the current cursor position is beyond the filtered results, reset to 0
-			if currentCursor >= len(m.filteredHosts) && len(m.filteredHosts) > 0 {
-				m.table.SetCursor(0)
-			}
+			m.applySearchFilter()
 		}
 	} else {
 		m.table, cmd = m.table.Update(msg)
 	}
 
 	return m, cmd
+}
+
+// focusSearch gives the keyboard focus to the search input
+func (m *Model) focusSearch() tea.Cmd {
+	m.searchMode = true
+	m.updateTableStyles()
+	m.table.Blur()
+	m.searchInput.Focus()
+	return textinput.Blink
+}
+
+// applySearchFilter lists the hosts matching the search text and selects the
+// first one, so that Enter connects to the best match
+func (m *Model) applySearchFilter() {
+	if m.searchInput.Value() != "" {
+		m.filteredHosts = m.filterHosts(m.searchInput.Value())
+	} else {
+		m.filteredHosts = m.sortHosts(m.hosts)
+	}
+	m.updateTableRows()
+	m.table.SetCursor(0)
+}
+
+// focusTable gives the keyboard focus back to the host table
+func (m *Model) focusTable() {
+	m.searchMode = false
+	m.updateTableStyles()
+	m.searchInput.Blur()
+	m.table.Focus()
+}
+
+// connectToSelectedHost records the selected host in the history and returns
+// the command that runs ssh on it, or nil when no host is selected
+func (m Model) connectToSelectedHost() tea.Cmd {
+	selected := m.table.SelectedRow()
+	if len(selected) == 0 {
+		return nil
+	}
+	hostName := extractHostNameFromTableRow(selected[0]) // Extract hostname from first column
+
+	// Record the connection in history
+	if m.historyManager != nil {
+		err := m.historyManager.RecordConnection(hostName)
+		if err != nil {
+			// Log the error but don't prevent the connection
+			fmt.Printf("Warning: Could not record connection history: %v\n", err)
+		}
+	}
+
+	// Build the SSH command with the appropriate config file
+	var sshCmd *exec.Cmd
+	if m.configFile != "" {
+		sshCmd = exec.Command("ssh", "-F", m.configFile, hostName)
+	} else {
+		sshCmd = exec.Command("ssh", hostName)
+	}
+
+	return tea.ExecProcess(sshCmd, func(err error) tea.Msg {
+		return tea.Quit()
+	})
 }
