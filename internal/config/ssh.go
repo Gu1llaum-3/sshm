@@ -281,21 +281,15 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 				}
 				hosts = append(hosts, includeHosts...)
 			}
+		case "match":
+			// A Match block ends the current Host block; its directives
+			// depend on conditions sshm does not evaluate, so they are skipped
+			hosts = appendHostWithAliases(hosts, currentHost)
+			currentHost = nil
+			pendingTags = nil
 		case "host":
 			// New host, save previous one if it exists
-			if currentHost != nil {
-				hosts = append(hosts, *currentHost)
-
-				// Handle aliases: create duplicate hosts for each alias
-				if len(currentHost.aliasNames) > 0 {
-					for _, aliasName := range currentHost.aliasNames {
-						aliasHost := *currentHost // Copy the host
-						aliasHost.Name = aliasName
-						aliasHost.aliasNames = nil // Clear temporary field
-						hosts = append(hosts, aliasHost)
-					}
-				}
-			}
+			hosts = appendHostWithAliases(hosts, currentHost)
 
 			// Skip patterns (wildcards and negations), which are not actual hosts
 			var validHostNames []string
@@ -382,23 +376,25 @@ func parseSSHConfigFileWithProcessedFiles(configPath string, processedFiles map[
 	}
 
 	// Add the last host if it exists
-	if currentHost != nil {
-		hosts = append(hosts, *currentHost)
-
-		// Handle aliases: create duplicate hosts for each alias
-		if len(currentHost.aliasNames) > 0 {
-			for _, aliasName := range currentHost.aliasNames {
-				aliasHost := *currentHost // Copy the host
-				aliasHost.Name = aliasName
-				aliasHost.aliasNames = nil // Clear temporary field
-				hosts = append(hosts, aliasHost)
-			}
-		}
-		// Clear the temporary field from the original
-		currentHost.aliasNames = nil
-	}
+	hosts = appendHostWithAliases(hosts, currentHost)
 
 	return hosts, scanner.Err()
+}
+
+// appendHostWithAliases appends a parsed host, if any, then a copy of it for
+// each other name of its Host line
+func appendHostWithAliases(hosts []SSHHost, host *SSHHost) []SSHHost {
+	if host == nil {
+		return hosts
+	}
+	hosts = append(hosts, *host)
+	for _, aliasName := range host.aliasNames {
+		aliasHost := *host // Copy the host
+		aliasHost.Name = aliasName
+		aliasHost.aliasNames = nil // Clear temporary field
+		hosts = append(hosts, aliasHost)
+	}
+	return hosts
 }
 
 // processIncludeDirective processes an Include directive and returns hosts from included files
@@ -843,6 +839,23 @@ func isHostLine(line string) bool {
 	return ok
 }
 
+// blockEnd returns the index of the first line after the block body that
+// starts at lines[start]: the next blank line, Host line or Match line
+func blockEnd(lines []string, start int) int {
+	end := start
+	for end < len(lines) && strings.TrimSpace(lines[end]) != "" && !isBlockStart(lines[end]) {
+		end++
+	}
+	return end
+}
+
+// isBlockStart reports whether a config line starts a new block, which ends
+// the block before it: a Host line or a Match line
+func isBlockStart(line string) bool {
+	parsed, ok := splitConfigLine(line)
+	return ok && (strings.EqualFold(parsed.keyword, "host") || strings.EqualFold(parsed.keyword, "match"))
+}
+
 // HostExists checks if a host already exists in the config
 func HostExists(hostName string) (bool, error) {
 	hosts, err := ParseSSHConfig()
@@ -1145,16 +1158,13 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 
 							// Copy the existing configuration for remaining hosts
 							i += 2 // Skip tags and original Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-								newLines = append(newLines, lines[i])
-								i++
-							}
+							end := blockEnd(lines, i)
+							newLines = append(newLines, lines[i:end]...)
+							i = end
 						} else {
 							// No remaining hosts, skip the entire block
 							i += 2 // Skip tags and Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-								i++
-							}
+							i = blockEnd(lines, i)
 						}
 
 						// Add the new host as a separate entry
@@ -1171,9 +1181,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 						// Simple case: only one host, replace entire block
 						// Skip until we find the end of this host block (empty line or next Host)
 						i += 2 // Skip tags and Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-							i++
-						}
+						i = blockEnd(lines, i)
 
 						// Skip any trailing empty lines after the host block
 						for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
@@ -1231,16 +1239,13 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 
 						// Copy the existing configuration for remaining hosts
 						i++ // Skip original Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-							newLines = append(newLines, lines[i])
-							i++
-						}
+						end := blockEnd(lines, i)
+						newLines = append(newLines, lines[i:end]...)
+						i = end
 					} else {
 						// No remaining hosts, skip the entire block
 						i++ // Skip Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-							i++
-						}
+						i = blockEnd(lines, i)
 					}
 
 					// Add the new host as a separate entry
@@ -1257,9 +1262,7 @@ func UpdateSSHHostInFile(oldName string, newHost SSHHost, configPath string) err
 					// Simple case: only one host, replace entire block
 					// Skip until we find the end of this host block
 					i++ // Skip Host line
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-						i++
-					}
+					i = blockEnd(lines, i)
 
 					// Skip any trailing empty lines after the host block
 					for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
@@ -1386,16 +1389,13 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 
 							// Copy the existing configuration for remaining hosts
 							i += 2 // Skip tags and original Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-								newLines = append(newLines, lines[i])
-								i++
-							}
+							end := blockEnd(lines, i)
+							newLines = append(newLines, lines[i:end]...)
+							i = end
 						} else {
 							// No remaining hosts, skip the entire block
 							i += 2 // Skip tags and Host line
-							for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-								i++
-							}
+							i = blockEnd(lines, i)
 						}
 
 						// Skip any trailing empty lines after the host block
@@ -1415,9 +1415,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 						i += 2
 
 						// Skip until we find the end of this host block (empty line or next Host)
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-							i++
-						}
+						i = blockEnd(lines, i)
 
 						// Skip any trailing empty lines after the host block
 						for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
@@ -1468,16 +1466,13 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 
 						// Copy the existing configuration for remaining hosts
 						i++ // Skip original Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-							newLines = append(newLines, lines[i])
-							i++
-						}
+						end := blockEnd(lines, i)
+						newLines = append(newLines, lines[i:end]...)
+						i = end
 					} else {
 						// No remaining hosts, skip the entire block
 						i++ // Skip Host line
-						for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-							i++
-						}
+						i = blockEnd(lines, i)
 					}
 
 					// Skip any trailing empty lines after the host block
@@ -1497,9 +1492,7 @@ func DeleteSSHHostFromFileWithLine(hostName, configPath string, targetLineNumber
 					i++
 
 					// Skip until we find the end of this host block
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-						i++
-					}
+					i = blockEnd(lines, i)
 
 					// Skip any trailing empty lines after the host block
 					for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
@@ -1777,9 +1770,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 
 					// Skip the old block entirely
 					i += 2 // Skip tags and Host line
-					for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-						i++
-					}
+					i = blockEnd(lines, i)
 
 					// Skip any trailing empty lines after the host block
 					for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
@@ -1832,9 +1823,7 @@ func UpdateMultiHostBlock(originalHosts, newHosts []string, commonProperties SSH
 
 				// Skip the old block entirely
 				i++ // Skip Host line
-				for i < len(lines) && strings.TrimSpace(lines[i]) != "" && !isHostLine(lines[i]) {
-					i++
-				}
+				i = blockEnd(lines, i)
 
 				// Skip any trailing empty lines after the host block
 				for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
