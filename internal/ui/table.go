@@ -36,11 +36,7 @@ func (m *Model) calculateDynamicColumnWidths(hosts []config.SSHHost) (int, int, 
 
 		// Calculate tags string length
 		var tagsStr string
-		if len(host.Tags) > 0 {
-			var formattedTags []string
-			for _, tag := range host.Tags {
-				formattedTags = append(formattedTags, "#"+tag)
-			}
+		if formattedTags := host.FormattedTags(); len(formattedTags) > 0 {
 			tagsStr = strings.Join(formattedTags, " ")
 		}
 		if len(tagsStr) > maxTagsLength {
@@ -135,12 +131,7 @@ func (m *Model) updateTableRows() {
 
 		// Format tags for display
 		var tagsStr string
-		if len(host.Tags) > 0 {
-			// Add the # prefix to each tag and join them with spaces
-			var formattedTags []string
-			for _, tag := range host.Tags {
-				formattedTags = append(formattedTags, "#"+tag)
-			}
+		if formattedTags := host.FormattedTags(); len(formattedTags) > 0 {
 			tagsStr = strings.Join(formattedTags, " ")
 		}
 
@@ -185,6 +176,9 @@ func (m *Model) updateTableHeight() {
 	// - Safety margin: 3 lines (to ensure UI elements are always visible)
 	// Total reserved: 14 lines minimum to preserve essential UI elements
 	reservedHeight := 14
+	if len(m.configWarnings) > 0 {
+		reservedHeight++
+	}
 	availableHeight := m.height - reservedHeight
 	hostCount := len(m.table.Rows())
 
@@ -294,12 +288,7 @@ func calculateTagsColumnWidth(hosts []config.SSHHost) int {
 	for _, host := range hosts {
 		// Format tags exactly as they appear in the table
 		var tagsStr string
-		if len(host.Tags) > 0 {
-			// Add the # prefix to each tag and join them with spaces
-			var formattedTags []string
-			for _, tag := range host.Tags {
-				formattedTags = append(formattedTags, "#"+tag)
-			}
+		if formattedTags := host.FormattedTags(); len(formattedTags) > 0 {
 			tagsStr = strings.Join(formattedTags, " ")
 		}
 

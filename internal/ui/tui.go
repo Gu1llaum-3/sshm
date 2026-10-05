@@ -16,7 +16,7 @@ import (
 )
 
 // NewModel creates a new TUI model with the given SSH hosts
-func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string, noUpdateCheck bool) Model {
+func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string, noUpdateCheck bool, warnings ...string) Model {
 	// Load application configuration
 	appConfig, err := config.LoadAppConfig()
 	if err != nil {
@@ -67,6 +67,8 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 		searchMode:     searchMode,
 	}
 
+	m.configWarnings = warnings
+
 	// Apply visibility filter (showHidden is false by default)
 	visibleHosts := m.applyVisibilityFilter(hosts)
 	m.hosts = visibleHosts
@@ -104,12 +106,7 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 
 		// Format tags for display
 		var tagsStr string
-		if len(host.Tags) > 0 {
-			// Add the # prefix to each tag and join them with spaces
-			var formattedTags []string
-			for _, tag := range host.Tags {
-				formattedTags = append(formattedTags, "#"+tag)
-			}
+		if formattedTags := host.FormattedTags(); len(formattedTags) > 0 {
 			tagsStr = strings.Join(formattedTags, " ")
 		}
 
@@ -165,8 +162,8 @@ func NewModel(hosts []config.SSHHost, configFile string, searchMode bool, curren
 }
 
 // RunInteractiveMode starts the interactive TUI interface
-func RunInteractiveMode(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string, noUpdateCheck bool) error {
-	m := NewModel(hosts, configFile, searchMode, currentVersion, noUpdateCheck)
+func RunInteractiveMode(hosts []config.SSHHost, configFile string, searchMode bool, currentVersion string, noUpdateCheck bool, warnings ...string) error {
+	m := NewModel(hosts, configFile, searchMode, currentVersion, noUpdateCheck, warnings...)
 
 	// Start the application in alt screen mode for clean output
 	p := tea.NewProgram(m, tea.WithAltScreen())

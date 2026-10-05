@@ -35,15 +35,7 @@ Examples:
 }
 
 func runSearch(cmd *cobra.Command, args []string) {
-	// Parse SSH configurations
-	var hosts []config.SSHHost
-	var err error
-
-	if configFile != "" {
-		hosts, err = config.ParseSSHConfigFile(configFile)
-	} else {
-		hosts, err = config.ParseSSHConfig()
-	}
+	hosts, err := parseConfigForCLI(configFile, cmd.ErrOrStderr())
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading SSH config file: %v\n", err)
@@ -116,7 +108,7 @@ func filterHosts(hosts []config.SSHHost, query string, tagsOnly, namesOnly bool)
 
 		// Search in tags if not names-only
 		if !namesOnly && !matched {
-			for _, tag := range host.Tags {
+			for _, tag := range host.AllTags() {
 				if strings.Contains(strings.ToLower(tag), query) {
 					matched = true
 					break
@@ -154,7 +146,7 @@ func outputTable(hosts []config.SSHHost) {
 		if len(host.User) > userWidth {
 			userWidth = len(host.User)
 		}
-		tagsStr := strings.Join(host.Tags, ", ")
+		tagsStr := strings.Join(host.AllTags(), ", ")
 		if len(tagsStr) > tagsWidth {
 			tagsWidth = len(tagsStr)
 		}
@@ -180,7 +172,7 @@ func outputTable(hosts []config.SSHHost) {
 		if user == "" {
 			user = "-"
 		}
-		tags := strings.Join(host.Tags, ", ")
+		tags := strings.Join(host.AllTags(), ", ")
 		if tags == "" {
 			tags = "-"
 		}
@@ -211,9 +203,10 @@ func outputJSON(hosts []config.SSHHost) {
 		fmt.Printf("    \"proxy_command\": \"%s\",\n", escapeJSON(host.ProxyCommand))
 		fmt.Printf("    \"options\": \"%s\",\n", escapeJSON(host.Options))
 		fmt.Printf("    \"tags\": [")
-		for j, tag := range host.Tags {
+		allTags := host.AllTags()
+		for j, tag := range allTags {
 			fmt.Printf("\"%s\"", escapeJSON(tag))
-			if j < len(host.Tags)-1 {
+			if j < len(allTags)-1 {
 				fmt.Printf(", ")
 			}
 		}

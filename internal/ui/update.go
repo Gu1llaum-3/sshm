@@ -184,9 +184,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var err error
 
 			if m.configFile != "" {
-				hosts, err = config.ParseSSHConfigFile(m.configFile)
+				hosts, m.configWarnings, err = config.ParseSSHConfigFileWithWarnings(m.configFile)
 			} else {
-				hosts, err = config.ParseSSHConfig()
+				hosts, m.configWarnings, err = config.ParseSSHConfigWithWarnings()
 			}
 
 			if err != nil {
@@ -229,9 +229,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var err error
 
 			if m.configFile != "" {
-				hosts, err = config.ParseSSHConfigFile(m.configFile)
+				hosts, m.configWarnings, err = config.ParseSSHConfigFileWithWarnings(m.configFile)
 			} else {
-				hosts, err = config.ParseSSHConfig()
+				hosts, m.configWarnings, err = config.ParseSSHConfigWithWarnings()
 			}
 
 			if err != nil {
@@ -275,9 +275,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var err error
 
 			if m.configFile != "" {
-				hosts, err = config.ParseSSHConfigFile(m.configFile)
+				hosts, m.configWarnings, err = config.ParseSSHConfigFileWithWarnings(m.configFile)
 			} else {
-				hosts, err = config.ParseSSHConfig()
+				hosts, m.configWarnings, err = config.ParseSSHConfigWithWarnings()
 			}
 
 			if err != nil {
@@ -529,9 +529,9 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			var parseErr error
 
 			if m.configFile != "" {
-				hosts, parseErr = config.ParseSSHConfigFile(m.configFile)
+				hosts, m.configWarnings, parseErr = config.ParseSSHConfigFileWithWarnings(m.configFile)
 			} else {
-				hosts, parseErr = config.ParseSSHConfig()
+				hosts, m.configWarnings, parseErr = config.ParseSSHConfigWithWarnings()
 			}
 
 			if parseErr != nil {
