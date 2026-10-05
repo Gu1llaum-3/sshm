@@ -739,6 +739,10 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateTableRows()
 			return m, nil
 		}
+	case "ctrl+p":
+		m.table.MoveUp(1)
+	case "ctrl+n":
+		m.table.MoveDown(1)
 	}
 
 	// Update the appropriate component based on mode

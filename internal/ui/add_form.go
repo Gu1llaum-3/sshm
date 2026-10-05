@@ -195,7 +195,7 @@ func (m *addFormModel) Update(msg tea.Msg) (*addFormModel, tea.Cmd) {
 			m.focused = m.getFirstInputForTab(m.currentTab)
 			return m, m.updateFocus()
 
-		case "tab", "shift+tab", "enter", "up", "down":
+		case "tab", "shift+tab", "enter", "up", "down", "ctrl+p", "ctrl+n":
 			return m, m.handleNavigation(msg.String())
 		}
 
@@ -276,7 +276,7 @@ func (m *addFormModel) handleNavigation(key string) tea.Cmd {
 	}
 
 	// Navigate within current tab
-	if key == "up" || key == "shift+tab" {
+	if key == "up" || key == "shift+tab" || key == "ctrl+p" {
 		currentPos--
 	} else {
 		currentPos++
