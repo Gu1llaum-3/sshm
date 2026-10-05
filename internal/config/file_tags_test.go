@@ -217,3 +217,76 @@ func TestFileTagsWarningsIncludeLocationsAndDoNotAccumulate(t *testing.T) {
 		}
 	}
 }
+
+func TestFileTagsWithOpenSSHSyntax(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("APPDATA", dir)
+	parent := filepath.Join(dir, "config")
+	for name, content := range map[string]string{
+		"config":    "#FileTags: parent\nInclude=\"child one\" child-two\n#FileTags: ignored\nHost=parent\n HostName=parent.example\n",
+		"child one": "#FileTags: child\nHost=first alias\n HostName=first.example\n IdentityFile=key1\n IdentityFile=key2\n\n#FileTags: hidden\nHost=second\n HostName=second.example\n",
+		"child-two": "#FileTags: other\nHost=other\n HostName=other.example\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hosts, warnings, err := ParseSSHConfigFileWithWarnings(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 5 || len(warnings) != 2 {
+		t.Fatalf("hosts=%+v warnings=%v", hosts, warnings)
+	}
+	for _, h := range hosts {
+		want := "child"
+		if h.Name == "parent" {
+			want = "parent"
+		}
+		if h.Name == "other" {
+			want = "other"
+		}
+		if !reflect.DeepEqual(h.InheritedTags, []string{want}) {
+			t.Errorf("%s tags = %v", h.Name, h.InheritedTags)
+		}
+		if h.Name == "first" || h.Name == "alias" {
+			if h.Identity != "key1" || !reflect.DeepEqual(h.ExtraIdentities, []string{"key2"}) {
+				t.Errorf("identities = %+v", h)
+			}
+		}
+	}
+	if found, err := QuickHostExistsInFile("alias", parent); err != nil || !found {
+		t.Fatalf("quick lookup: found=%v err=%v", found, err)
+	}
+	// Delete the first block using the same syntax recognized by the new parser.
+	child := filepath.Join(dir, "child one")
+	for _, name := range []string{"first", "alias"} {
+		if err := DeleteSSHHostFromFile(name, child); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remaining, err := ParseSSHConfigFile(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || !reflect.DeepEqual(remaining[0].InheritedTags, []string{"child"}) {
+		t.Fatalf("deletion activated ignored tags: %+v", remaining)
+	}
+}
+
+func TestPreserveFileTagsScopeWithEqualsHost(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	path := writeTempConfig(t, "#FileTags: prod\nHost=first\n HostName=first.example\n\n#FileTags: hidden\nHost=second\n HostName=second.example\n")
+	if err := DeleteSSHHostFromFile("first", path); err != nil {
+		t.Fatal(err)
+	}
+	hosts, err := ParseSSHConfigFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 1 || !reflect.DeepEqual(hosts[0].InheritedTags, []string{"prod"}) {
+		t.Fatalf("tags after deletion: %+v", hosts)
+	}
+}

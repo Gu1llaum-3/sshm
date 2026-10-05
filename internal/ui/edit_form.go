@@ -378,6 +378,9 @@ func (m *editFormModel) getMinimumHeight() int {
 	}
 	// Each field: reduced from 4 to 3 lines per field
 	fieldsLines := fieldsCount * 3
+	if m.currentTab == 0 && m.host != nil {
+		fieldsLines += len(m.host.ExtraIdentities) // read-only extra keys under Identity File
+	}
 	// Help text: 3 lines
 	helpLines := 3
 	// Error message space when needed: 2 lines
@@ -614,6 +617,12 @@ func (m *editFormModel) renderEditGeneralTab() string {
 		b.WriteString("\n")
 		b.WriteString(m.inputs[field.index].View())
 		b.WriteString("\n")
+		if field.index == 3 && m.host != nil {
+			for _, identity := range m.host.ExtraIdentities {
+				b.WriteString(m.styles.FormHelp.Render("  also: " + identity + " (read-only, kept on save)"))
+				b.WriteString("\n")
+			}
+		}
 		if field.index == 7 && m.focusArea == focusAreaProperties && m.focused == 7 {
 			b.WriteString(m.styles.FormHelp.Render(`  tip: use "hidden" to hide this host from the list`))
 			b.WriteString("\n")
@@ -756,6 +765,11 @@ func (m *editFormModel) submitEditForm() tea.Cmd {
 			RemoteCommand: remoteCommand,
 			RequestTTY:    requestTTY,
 			Tags:          tags,
+		}
+
+		// The form only edits the main key: the extra ones are kept as they are
+		if m.host != nil {
+			commonHost.ExtraIdentities = m.host.ExtraIdentities
 		}
 
 		var err error

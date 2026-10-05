@@ -21,6 +21,9 @@ func TestInheritedTagsInTableSearchAndVisibility(t *testing.T) {
 		{Name: "secret", Hostname: "secret.example.com", InheritedTags: []string{"hidden", "prod"}},
 	}
 	m := NewModel(hosts, "", false, "", true)
+	// Main now starts in search mode; Tab enables table shortcuts such as H.
+	tableModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = tableModel.(Model)
 	if len(m.filteredHosts) != 1 {
 		t.Fatalf("visible hosts = %+v", m.filteredHosts)
 	}
@@ -125,6 +128,9 @@ func TestConfigWarningsSurviveReloadsWithoutStderr(t *testing.T) {
 			t.Fatalf("missing warning after %T", msg)
 		}
 	}
+	// Return from the default search focus before confirming a deletion.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(Model)
 	// The normal delete path also updates diagnostics. Deleting the first host
 	// neutralizes the promoted directive, so the stale warning must disappear.
 	m.deleteMode = true

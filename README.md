@@ -6,7 +6,7 @@
 
 # 🚀 SSHM - SSH Manager
 
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
 [![Release](https://img.shields.io/github/v/release/Gu1llaum-3/sshm?style=for-the-badge)](https://github.com/Gu1llaum-3/sshm/releases)
 [![License](https://img.shields.io/github/license/Gu1llaum-3/sshm?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=for-the-badge)](https://github.com/Gu1llaum-3/sshm/releases)
@@ -32,7 +32,7 @@ SSHM is a beautiful command-line tool that transforms how you manage and connect
 - **📝 Easy Management** - Add, edit, move, and manage SSH configurations seamlessly
 - **🏷️ Tag Support** - Organize your hosts with custom tags for better categorization; declare file-wide tags via `# FileTags:` so every host in a config file inherits them; use the special `hidden` tag to exclude hosts from the list while keeping them connectable
 - **🔍 Smart Search** - Find hosts quickly with built-in filtering and search
-- **📝 Real-time Status** - Live SSH connectivity indicators with asynchronous ping checks and color-coded status
+- **📝 Connectivity Status** - Color-coded SSH connectivity indicators, checked in the background when the TUI starts and on demand
 - **🔔 Smart Updates** - Automatic version checking with update notifications
 - **📈 Connection History** - Track your SSH connections with last login timestamps
 
@@ -98,7 +98,14 @@ Launch SSHM without arguments to enter the beautiful TUI interface:
 sshm
 ```
 
-**Navigation:**
+**Search (focused at startup):**
+- Type to filter hosts by name, hostname or tag
+- `↑/↓` or `Ctrl+P/Ctrl+N` - Select a host without leaving the search
+- `Enter` - Connect to the selected host
+- `Esc` - Clear the search (quits when the search is empty)
+- `Tab` - Switch to the host table, where the shortcuts below work
+
+**Host table:**
 - `↑/↓` or `j/k` - Navigate hosts
 - `Enter` - Connect to selected host
 - `a` - Add new host
@@ -106,11 +113,12 @@ sshm
 - `d` - Delete selected host
 - `m` - Move host to another config file (requires SSH Include directives)
 - `f` - Port forwarding setup
+- `p` - Check the status of all hosts again
 - `H` - Toggle hidden hosts visibility
 - `q` - Quit
-- `/` - Search/filter hosts
+- `/` or `Tab` - Back to the search
 
-**Real-time Status Indicators:**
+**Status Indicators** (checked when the TUI starts, and again with `p`):
 - 🟢 **Online** - Host is reachable via SSH
 - 🟡 **Connecting** - Currently checking host connectivity
 - 🔴 **Offline** - Host is unreachable or SSH connection failed
@@ -120,9 +128,6 @@ sshm
 - `s` - Switch between sorting modes (name ↔ last login)
 - `n` - Sort by **name** (alphabetical)
 - `r` - Sort by **recent** (last login time)
-- `Tab` - Cycle between filtering modes
-- Filter by **name** (default) - Search through host names
-- Filter by **last login** - Sort and filter by most recently used connections
 
 The interactive forms will guide you through configuration:
 - **Hostname/IP** - Server address
@@ -482,7 +487,7 @@ Host personal-server
     User myuser
 ```
 
-#### Real-time Connectivity Status
+#### Connectivity Status
 
 SSHM features asynchronous SSH connectivity checking that provides visual indicators of host availability:
 
@@ -495,7 +500,7 @@ SSHM features asynchronous SSH connectivity checking that provides visual indica
 **Features:**
 - **Non-blocking checks** - Status updates happen in the background
 - **Response time tracking** - See connection latency for online hosts
-- **Automatic refresh** - Status indicators update continuously
+- **Checked at startup** - Every visible host is checked when the TUI starts; press `p` to check again. Set `ping_on_start` to `false` to check only on demand
 - **Error details** - Detailed error information for failed connections
 
 #### Automatic Update Checking
@@ -729,6 +734,8 @@ SSHM supports a configuration file to customize its behavior, including key bind
 ```json
 {
   "check_for_updates": false,
+  "focus_search_on_start": false,
+  "ping_on_start": false,
   "key_bindings": {
     "quit_keys": ["q", "ctrl+c"],
     "disable_esc_quit": true
@@ -738,6 +745,8 @@ SSHM supports a configuration file to customize its behavior, including key bind
 
 **Available Options:**
 - **check_for_updates**: Boolean to enable or disable the automatic update check at startup. Default: `true`. Set to `false` on air-gapped or offline machines to avoid connection delays.
+- **focus_search_on_start**: Boolean to choose where the focus is when the TUI starts. Default: `true` (the search bar). Set to `false` to start on the host table; the `-s` / `--search` flag still starts on the search bar.
+- **ping_on_start**: Boolean to check the status of every visible host when the TUI starts. Default: `true`. Set to `false` to check only when you press `p` (for example with many hosts, or hosts behind a slow ProxyJump).
 - **quit_keys**: Array of keys that will quit the application. Default: `["q", "ctrl+c"]`
 - **disable_esc_quit**: Boolean flag to disable ESC key from quitting the application. Default: `false`
 
@@ -754,7 +763,7 @@ If no configuration file exists, SSHM will automatically create one with default
 
 ### Prerequisites
 
-- Go 1.23+ 
+- Go 1.27+ 
 - Git
 
 ### Build from Source
