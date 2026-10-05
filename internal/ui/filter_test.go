@@ -241,3 +241,48 @@ func TestSourceFileFilterAfterDeleteOrMove(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceFileFilterWithSearchNavigation(t *testing.T) {
+	m := createTestModel()
+	m.allHosts = []config.SSHHost{
+		{Name: "alpha", SourceFile: "/x/work.conf"},
+		{Name: "beta", SourceFile: "/x/work.conf"},
+		{Name: "gamma", SourceFile: "/x/work.conf"},
+		{Name: "outside", SourceFile: "/x/other.conf"},
+	}
+	m.fileSelectorPurpose = purposeFilterHosts
+	updated, _ := m.Update(fileSelectorMsg{selectedFile: "/x/work.conf"})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(Model)
+	m.table.SetCursor(2)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	if m.table.Cursor() != 0 {
+		t.Fatalf("search cursor = %d, want first result", m.table.Cursor())
+	}
+	if len(m.filteredHosts) != 3 {
+		t.Fatalf("search results = %+v", m.filteredHosts)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.searchInput.Value() != "" || !m.searchMode {
+		t.Fatal("Esc must clear search and keep focus")
+	}
+	if m.selectedSourceFile != "/x/work.conf" || len(m.filteredHosts) != 3 {
+		t.Fatalf("Esc lost file filter: %q, %+v", m.selectedSourceFile, m.filteredHosts)
+	}
+	for _, host := range m.filteredHosts {
+		if host.SourceFile != "/x/work.conf" {
+			t.Fatalf("host outside selected file: %+v", host)
+		}
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(Model)
+	view := m.View()
+	for _, shortcut := range []string{"Tab: search", "c: filter by file", "C: clear filter"} {
+		if !strings.Contains(view, shortcut) {
+			t.Errorf("missing shortcut %q", shortcut)
+		}
+	}
+}

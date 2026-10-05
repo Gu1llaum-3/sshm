@@ -57,13 +57,14 @@ checksum:
 changelog:
   use: github
   sort: asc
+  # Short commit hashes in the release notes
+  abbrev: 7
   filters:
     exclude:
-    - "^docs:"
-    - "^test:"
-    - "^ci:"
-    - "^chore:"
-    - "^build:"
+    # Commits that don't change the program, with or without a scope
+    - '^(docs|test|ci|chore|build)(\(.+\))?!?:'
+    # Merge commits repeat the commits they merge
+    - '^Merge (pull request|branch) '
   groups:
   - title: Features
     regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'

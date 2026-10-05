@@ -219,7 +219,9 @@ func TestTabSwitchBetweenSearchAndTable(t *testing.T) {
 	}
 }
 
-func TestEnterExitsSearchMode(t *testing.T) {
+// Enter in search mode connects to the selected host instead of going back to
+// the table (see TestEnterInSearchConnectsToSelectedHost_AC2)
+func TestEnterStaysInSearchMode(t *testing.T) {
 	m := createTestModel()
 
 	// Enter search mode
@@ -231,13 +233,13 @@ func TestEnterExitsSearchMode(t *testing.T) {
 		t.Error("Should be in search mode")
 	}
 
-	// Press Enter to exit search mode
+	// Press Enter: it connects, the focus does not go back to the table
 	keyMsg = tea.KeyMsg{Type: tea.KeyEnter}
 	newModel, _ = m.Update(keyMsg)
 	m = newModel.(Model)
 
-	if m.searchMode {
-		t.Error("Should not be in search mode after Enter")
+	if !m.searchMode {
+		t.Error("Should still be in search mode after Enter")
 	}
 }
 

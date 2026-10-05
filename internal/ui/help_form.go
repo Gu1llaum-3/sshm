@@ -48,7 +48,10 @@ func (m *helpModel) View() string {
 		"",
 		lipgloss.JoinHorizontal(lipgloss.Left,
 			m.styles.FocusedLabel.Render("⏎  "),
-			m.styles.HelpText.Render("connect to selected host")),
+			m.styles.HelpText.Render("connect (also from search)")),
+		lipgloss.JoinHorizontal(lipgloss.Left,
+			m.styles.FocusedLabel.Render("↑↓ "),
+			m.styles.HelpText.Render("select (Ctrl+P/N in search)")),
 		lipgloss.JoinHorizontal(lipgloss.Left,
 			m.styles.FocusedLabel.Render("i  "),
 			m.styles.HelpText.Render("show host information")),
@@ -57,7 +60,7 @@ func (m *helpModel) View() string {
 			m.styles.HelpText.Render("search hosts")),
 		lipgloss.JoinHorizontal(lipgloss.Left,
 			m.styles.FocusedLabel.Render("Tab "),
-			m.styles.HelpText.Render("switch focus")),
+			m.styles.HelpText.Render("switch search / table")),
 		"",
 		m.styles.FocusedLabel.Render("Host Management"),
 		"",
@@ -113,7 +116,7 @@ func (m *helpModel) View() string {
 			m.styles.HelpText.Render("quit application")),
 		lipgloss.JoinHorizontal(lipgloss.Left,
 			m.styles.FocusedLabel.Render("ESC "),
-			m.styles.HelpText.Render("exit current view")),
+			m.styles.HelpText.Render("clear search / exit view")),
 	)
 
 	// Join the two columns side by side

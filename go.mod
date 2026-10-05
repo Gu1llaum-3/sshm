@@ -1,6 +1,6 @@
 module github.com/Gu1llaum-3/sshm
 
-go 1.23.1
+go 1.27.1
 
 require (
 	github.com/charmbracelet/bubbles v0.21.0

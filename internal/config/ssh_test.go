@@ -1490,12 +1490,12 @@ func TestFormatSSHConfigValue(t *testing.T) {
 		{
 			name:     "path with quotes but no spaces",
 			input:    `/home/user/key"with"quotes`,
-			expected: `/home/user/key"with"quotes`,
+			expected: `"/home/user/key\"with\"quotes"`,
 		},
 		{
 			name:     "path with spaces and quotes",
 			input:    `/home/user/key "with" quotes`,
-			expected: `"/home/user/key "with" quotes"`,
+			expected: `"/home/user/key \"with\" quotes"`,
 		},
 		{
 			name:     "empty path",
@@ -1552,6 +1552,38 @@ func TestAddSSHHostWithSpacesInPath(t *testing.T) {
 	expectedIdentityLine := `    IdentityFile "/path/with spaces/key file"`
 	if !strings.Contains(contentStr, expectedIdentityLine) {
 		t.Errorf("Expected identity file line with quotes not found.\nContent:\n%s\nExpected line: %s", contentStr, expectedIdentityLine)
+	}
+}
+
+func TestParseSSHConfigWithQuotedIdentityFile(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configFile := filepath.Join(tempDir, "config")
+	configContent := `Host with-quoted-key
+    HostName example.com
+    User user
+    IdentityFile "/path/with spaces/id key"
+`
+
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
+
+	hosts, err := ParseSSHConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("ParseSSHConfigFile() error = %v", err)
+	}
+
+	if len(hosts) != 1 {
+		t.Fatalf("Expected 1 host, got %d", len(hosts))
+	}
+
+	if strings.Contains(hosts[0].Identity, `"`) {
+		t.Errorf("Identity %q still contains quotes", hosts[0].Identity)
+	}
+	if got, want := hosts[0].Identity, "/path/with spaces/id key"; got != want {
+		t.Errorf("Identity = %q, want %q", got, want)
 	}
 }
 

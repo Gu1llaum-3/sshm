@@ -108,8 +108,9 @@ func (m Model) renderListView() string {
 	}
 
 	// Add the search bar with the appropriate style based on focus
-	searchPrompt := "Search (/ to focus): "
+	searchPrompt := "Search (/ or Tab to focus): "
 	if m.searchMode {
+		searchPrompt = "Search: "
 		components = append(components, m.styles.SearchFocused.Render(searchPrompt+m.searchInput.View()))
 	} else {
 		components = append(components, m.styles.SearchUnfocused.Render(searchPrompt+m.searchInput.View()))
@@ -128,12 +129,12 @@ func (m Model) renderListView() string {
 	var helpText string
 	if !m.searchMode {
 		if m.selectedSourceFile != "" {
-			helpText = " ↑/↓: navigate • Enter: connect • p: ping all • i: info • c: filter by file • C: clear filter • h: help • q: quit"
+			helpText = " ↑/↓: navigate • Enter: connect • Tab: search • i: info • c: filter by file • C: clear filter • h: help • q: quit"
 		} else {
-			helpText = " ↑/↓: navigate • Enter: connect • p: ping all • i: info • c: filter by file • h: help • q: quit"
+			helpText = " ↑/↓: navigate • Enter: connect • Tab: search • i: info • c: filter by file • h: help • q: quit"
 		}
 	} else {
-		helpText = " Type to filter • Enter: validate • Tab: switch • ESC: quit"
+		helpText = " ↑/↓: select • Enter: connect • Tab: table shortcuts • Esc: clear/quit"
 	}
 	components = append(components, m.styles.HelpText.Render(helpText))
 
