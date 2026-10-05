@@ -58,6 +58,10 @@ SSHM is a beautiful command-line tool that transforms how you manage and connect
 brew install Gu1llaum-3/sshm/sshm
 ```
 
+**Nix:**
+
+sshm is available in [nixpkgs](https://search.nixos.org/packages?channel=26.05&query=sshm) (stable 26.05+).
+
 **Unix/Linux/macOS (One-line install):**
 ```bash
 curl -sSL https://raw.githubusercontent.com/Gu1llaum-3/sshm/main/install/unix.sh | bash
