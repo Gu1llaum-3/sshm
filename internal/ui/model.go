@@ -44,6 +44,16 @@ const (
 	ViewFileSelector
 )
 
+// fileSelectorPurpose distinguishes the reason the file selector is open.
+// The same view is used for picking a file to add a host to and for
+// filtering the list by source file.
+type fileSelectorPurpose int
+
+const (
+	purposeAddHost fileSelectorPurpose = iota
+	purposeFilterHosts
+)
+
 // PortForwardType defines the type of port forwarding
 type PortForwardType int
 
@@ -81,6 +91,8 @@ type Model struct {
 	pingManager    *connectivity.PingManager
 	sortMode       SortMode
 	configFile     string // Path to the SSH config file
+	selectedSourceFile  string              // "" = all files, otherwise absolute path
+	fileSelectorPurpose fileSelectorPurpose // interpretation of fileSelectorForm result
 
 	// Application configuration
 	appConfig *config.AppConfig
@@ -140,4 +152,34 @@ func (m *Model) updateTableStyles() {
 	}
 
 	m.table.SetStyles(s)
+}
+
+// rebuildFilteredHosts recomputes m.hosts and m.filteredHosts from m.allHosts
+// by chaining every active filter in a deterministic order:
+// visibility (hidden tag) → source file → sort → search text.
+// Search is applied whenever m.searchInput.Value() != "", regardless of
+// m.searchMode (a stale search term persists across mode exits in this TUI).
+// Callers that mutate m.allHosts, m.selectedSourceFile, m.showHidden,
+// m.sortMode, or m.searchInput should call this and then updateTableRows().
+func (m *Model) rebuildFilteredHosts() {
+	visible := m.applyVisibilityFilter(m.allHosts)
+	byFile := applySourceFileFilter(visible, m.selectedSourceFile)
+	m.hosts = m.sortHosts(byFile)
+	if m.searchInput.Value() != "" {
+		m.filteredHosts = m.filterHosts(m.searchInput.Value())
+	} else {
+		m.filteredHosts = m.hosts
+	}
+}
+
+// clearEmptySourceFileFilter is called only after a successful delete or move.
+// Selecting an empty file or toggling visibility must preserve the user's filter.
+func (m *Model) clearEmptySourceFileFilter() {
+	if m.selectedSourceFile == "" {
+		return
+	}
+	visible := m.applyVisibilityFilter(m.allHosts)
+	if len(visible) > 0 && len(applySourceFileFilter(visible, m.selectedSourceFile)) == 0 {
+		m.selectedSourceFile = ""
+	}
 }

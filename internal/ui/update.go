@@ -193,14 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.viewMode = ViewList
@@ -238,14 +231,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.viewMode = ViewList
@@ -284,14 +270,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.clearEmptySourceFileFilter()
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.viewMode = ViewList
@@ -316,13 +296,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fileSelectorMsg:
 		if msg.cancelled {
-			// Cancel: return to list view
+			// Cancel: return to list view regardless of purpose.
 			m.viewMode = ViewList
 			m.fileSelectorForm = nil
 			m.table.Focus()
 			return m, nil
-		} else {
-			// File selected: proceed to add form with selected file
+		}
+		switch m.fileSelectorPurpose {
+		case purposeFilterHosts:
+			// msg.selectedFile == "" means "clear filter" (the synthetic entry).
+			m.selectedSourceFile = msg.selectedFile
+			m.rebuildFilteredHosts()
+			m.updateTableRows()
+			// Clamp cursor to the (possibly smaller) result set.
+			if c := m.table.Cursor(); c >= len(m.filteredHosts) && len(m.filteredHosts) > 0 {
+				m.table.SetCursor(len(m.filteredHosts) - 1)
+			}
+			m.viewMode = ViewList
+			m.fileSelectorForm = nil
+			m.table.Focus()
+			return m, nil
+		default: // purposeAddHost
 			m.addForm = NewAddForm("", m.styles, m.width, m.height, msg.selectedFile)
 			m.viewMode = ViewAdd
 			m.fileSelectorForm = nil
@@ -542,14 +536,8 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.allHosts = hosts
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(hosts))
-
-			// Reapply search filter if there is one active
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.clearEmptySourceFileFilter()
+			m.rebuildFilteredHosts()
 
 			m.updateTableRows()
 			m.deleteMode = false
@@ -644,11 +632,40 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.addForm = NewAddForm("", m.styles, m.width, m.height, m.configFile)
 					m.viewMode = ViewAdd
 				} else {
+					m.fileSelectorPurpose = purposeAddHost
 					m.fileSelectorForm = fileSelectorForm
 					m.viewMode = ViewFileSelector
 				}
 			}
 			return m, textinput.Blink
+		}
+	case "c":
+		if !m.searchMode && !m.deleteMode {
+			fileSelectorForm, err := NewFileSelectorWithAll(
+				"Filter hosts by config file:",
+				m.styles, m.width, m.height, m.configFile, "[All files]",
+			)
+			if err != nil {
+				m.errorMessage = err.Error()
+				m.showingError = true
+				return m, func() tea.Msg {
+					time.Sleep(3 * time.Second)
+					return errorMsg("clear")
+				}
+			}
+			m.fileSelectorForm = fileSelectorForm
+			m.fileSelectorPurpose = purposeFilterHosts
+			m.viewMode = ViewFileSelector
+			return m, textinput.Blink
+		}
+	case "C":
+		if !m.searchMode && !m.deleteMode {
+			if m.selectedSourceFile != "" {
+				m.selectedSourceFile = ""
+				m.rebuildFilteredHosts()
+				m.updateTableRows()
+			}
+			return m, nil
 		}
 	case "d":
 		if !m.searchMode && !m.deleteMode {
@@ -689,14 +706,8 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "H":
 		if !m.searchMode && !m.deleteMode {
-			// Toggle visibility of hidden hosts
 			m.showHidden = !m.showHidden
-			m.hosts = m.sortHosts(m.applyVisibilityFilter(m.allHosts))
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.hosts
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -704,12 +715,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.searchMode && !m.deleteMode {
 			// Cycle through sort modes (only 2 modes now)
 			m.sortMode = (m.sortMode + 1) % 2
-			// Re-apply the current filter with the new sort mode
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -717,12 +723,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.searchMode && !m.deleteMode {
 			// Switch to sort by recent (last used)
 			m.sortMode = SortByLastUsed
-			// Re-apply the current filter with the new sort mode
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -730,12 +731,7 @@ func (m Model) handleListViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.searchMode && !m.deleteMode {
 			// Switch to sort by name
 			m.sortMode = SortByName
-			// Re-apply the current filter with the new sort mode
-			if m.searchInput.Value() != "" {
-				m.filteredHosts = m.filterHosts(m.searchInput.Value())
-			} else {
-				m.filteredHosts = m.sortHosts(m.hosts)
-			}
+			m.rebuildFilteredHosts()
 			m.updateTableRows()
 			return m, nil
 		}
@@ -768,11 +764,7 @@ func (m *Model) focusSearch() tea.Cmd {
 // applySearchFilter lists the hosts matching the search text and selects the
 // first one, so that Enter connects to the best match
 func (m *Model) applySearchFilter() {
-	if m.searchInput.Value() != "" {
-		m.filteredHosts = m.filterHosts(m.searchInput.Value())
-	} else {
-		m.filteredHosts = m.sortHosts(m.hosts)
-	}
+	m.rebuildFilteredHosts()
 	m.updateTableRows()
 	m.table.SetCursor(0)
 }

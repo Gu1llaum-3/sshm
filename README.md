@@ -115,6 +115,8 @@ sshm
 - `f` - Port forwarding setup
 - `p` - Check the status of all hosts again
 - `H` - Toggle hidden hosts visibility
+- `c` - Filter hosts by config file
+- `C` - Clear config-file filter
 - `q` - Quit
 - `/` or `Tab` - Back to the search
 

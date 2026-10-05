@@ -94,6 +94,19 @@ func (m Model) renderListView() string {
 		components = append(components, hiddenBannerStyle.Render("  [showing hidden hosts — press H to hide]"))
 	}
 
+	// Active source-file filter banner.
+	if m.selectedSourceFile != "" {
+		filterBannerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("12")).
+			Bold(true)
+		label := sourceFileDisplayName(m.selectedSourceFile)
+		components = append(components,
+			filterBannerStyle.Render(
+				fmt.Sprintf("  [filtering by %s — press C to clear]", label),
+			),
+		)
+	}
+
 	// Add the search bar with the appropriate style based on focus
 	searchPrompt := "Search (/ or Tab to focus): "
 	if m.searchMode {
@@ -115,7 +128,11 @@ func (m Model) renderListView() string {
 	// Add the help text
 	var helpText string
 	if !m.searchMode {
-		helpText = " ↑/↓: navigate • Enter: connect • Tab: search • i: info • h: help • q: quit"
+		if m.selectedSourceFile != "" {
+			helpText = " ↑/↓: navigate • Enter: connect • Tab: search • i: info • c: filter by file • C: clear filter • h: help • q: quit"
+		} else {
+			helpText = " ↑/↓: navigate • Enter: connect • Tab: search • i: info • c: filter by file • h: help • q: quit"
+		}
 	} else {
 		helpText = " ↑/↓: select • Enter: connect • Tab: table shortcuts • Esc: clear/quit"
 	}
