@@ -180,34 +180,29 @@ func connectToHost(hostName string, remoteCommand []string) {
 		}
 	}
 
-	var args []string
-
-	if configFile != "" {
-		args = append(args, "-F", configFile)
+	appConfig, err := config.LoadAppConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Could not load application config: %v, using defaults\n", err)
+		defaultConfig := config.GetDefaultAppConfig()
+		appConfig = &defaultConfig
 	}
+	sshCommand := appConfig.GetSSHCommand()
 
-	if forceTTY {
-		args = append(args, "-t")
-	}
-
-	args = append(args, hostName)
-
-	if len(remoteCommand) > 0 {
-		args = append(args, remoteCommand...)
-	} else {
+	if len(remoteCommand) == 0 {
 		fmt.Printf("Connecting to %s...\n", hostName)
 	}
 
-	sshPath, lookErr := exec.LookPath("ssh")
+	argv := config.BuildSSHArgv(sshCommand, configFile, forceTTY, hostName, remoteCommand)
+
+	launcherPath, lookErr := exec.LookPath(sshCommand[0])
 	if lookErr == nil {
-		argv := append([]string{"ssh"}, args...)
 		// On Unix, Exec replaces the process and never returns on success.
 		// On Windows, Exec is not supported and returns an error; fall through to the exec.Command fallback.
-		_ = syscall.Exec(sshPath, argv, os.Environ())
+		_ = syscall.Exec(launcherPath, argv, os.Environ())
 	}
 
 	// Fallback for Windows or if LookPath failed
-	sshCmd := exec.Command("ssh", args...)
+	sshCmd := exec.Command(sshCommand[0], argv[1:]...)
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
 	sshCmd.Stderr = os.Stderr

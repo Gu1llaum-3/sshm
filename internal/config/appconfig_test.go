@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -241,5 +242,152 @@ func TestSaveAndLoadAppConfigIntegration(t *testing.T) {
 	}
 	if loadedConfig.IsUpdateCheckEnabled() {
 		t.Error("IsUpdateCheckEnabled should return false when CheckForUpdates is false")
+	}
+}
+
+// captureStderr redirects os.Stderr for the duration of fn and returns what was written.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+
+	original := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = original }()
+
+	fn()
+
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+
+	return buf.String()
+}
+
+func TestSSHCommandDefaultsWhenAbsent(t *testing.T) {
+	var stderr string
+	var loaded AppConfig
+
+	stderr = captureStderr(t, func() {
+		raw := []byte(`{"key_bindings": {"quit_keys": ["q"]}}`)
+		if err := json.Unmarshal(raw, &loaded); err != nil {
+			t.Fatalf("Failed to unmarshal config: %v", err)
+		}
+		loaded = mergeWithDefaults(loaded)
+	})
+
+	if len(loaded.SSHCommand) != 1 || loaded.SSHCommand[0] != "ssh" {
+		t.Errorf("Expected ssh_command to default to [\"ssh\"], got %v", loaded.SSHCommand)
+	}
+	if stderr != "" {
+		t.Errorf("Expected no warning when ssh_command is absent, got: %q", stderr)
+	}
+}
+
+func TestSSHCommandCustomValue(t *testing.T) {
+	raw := []byte(`{"ssh_command": ["kitten", "ssh"]}`)
+
+	var loaded AppConfig
+	if err := json.Unmarshal(raw, &loaded); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+	loaded = mergeWithDefaults(loaded)
+
+	expected := []string{"kitten", "ssh"}
+	if len(loaded.SSHCommand) != len(expected) {
+		t.Fatalf("Expected ssh_command %v, got %v", expected, loaded.SSHCommand)
+	}
+	for i, v := range expected {
+		if loaded.SSHCommand[i] != v {
+			t.Errorf("Expected ssh_command[%d] = %q, got %q", i, v, loaded.SSHCommand[i])
+		}
+	}
+}
+
+func TestSSHCommandInvalidFallsBackWithWarning(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "empty list", raw: `{"ssh_command": []}`},
+		{name: "list with empty string", raw: `{"ssh_command": ["ssh", ""]}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var loaded AppConfig
+
+			stderr := captureStderr(t, func() {
+				if err := json.Unmarshal([]byte(tt.raw), &loaded); err != nil {
+					t.Fatalf("Failed to unmarshal config: %v", err)
+				}
+				loaded = mergeWithDefaults(loaded)
+			})
+
+			if len(loaded.SSHCommand) != 1 || loaded.SSHCommand[0] != "ssh" {
+				t.Errorf("Expected fallback to [\"ssh\"], got %v", loaded.SSHCommand)
+			}
+			if stderr == "" {
+				t.Error("Expected a warning to be printed to stderr for invalid ssh_command")
+			}
+		})
+	}
+}
+
+func TestBuildSSHArgv(t *testing.T) {
+	tests := []struct {
+		name          string
+		sshCommand    []string
+		configFile    string
+		forceTTY      bool
+		hostName      string
+		remoteCommand []string
+		expected      []string
+	}{
+		{
+			name:       "default launcher with plain host",
+			sshCommand: []string{"ssh"},
+			hostName:   "myhost",
+			expected:   []string{"ssh", "myhost"},
+		},
+		{
+			name:       "custom launcher with plain host",
+			sshCommand: []string{"kitten", "ssh"},
+			hostName:   "myhost",
+			expected:   []string{"kitten", "ssh", "myhost"},
+		},
+		{
+			name:          "custom launcher with remote command",
+			sshCommand:    []string{"kitten", "ssh"},
+			hostName:      "myhost",
+			remoteCommand: []string{"uptime"},
+			expected:      []string{"kitten", "ssh", "myhost", "uptime"},
+		},
+		{
+			name:       "config file and force tty are preserved",
+			sshCommand: []string{"ssh"},
+			configFile: "/tmp/custom_config",
+			forceTTY:   true,
+			hostName:   "myhost",
+			expected:   []string{"ssh", "-F", "/tmp/custom_config", "-t", "myhost"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			argv := BuildSSHArgv(tt.sshCommand, tt.configFile, tt.forceTTY, tt.hostName, tt.remoteCommand)
+
+			if len(argv) != len(tt.expected) {
+				t.Fatalf("Expected argv %v, got %v", tt.expected, argv)
+			}
+			for i, v := range tt.expected {
+				if argv[i] != v {
+					t.Errorf("Expected argv[%d] = %q, got %q", i, v, argv[i])
+				}
+			}
+		})
 	}
 }

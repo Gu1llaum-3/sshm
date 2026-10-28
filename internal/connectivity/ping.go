@@ -175,7 +175,7 @@ func (pm *PingManager) PingHost(ctx context.Context, host config.SSHHost) *HostP
 // pingWithExternalCommand pings a host using the external SSH command
 func (pm *PingManager) pingWithExternalCommand(ctx context.Context, host config.SSHHost, start time.Time) *HostPingResult {
 	// Construct the SSH command
-	// ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 host exit
+	// ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 host true
 	args := []string{"-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no"}
 
 	// Set timeout matching the manager's timeout
@@ -191,8 +191,8 @@ func (pm *PingManager) pingWithExternalCommand(ctx context.Context, host config.
 		args = append(args, "-F", pm.configFile)
 	}
 
-	// Add the host name and the command to run (exit)
-	args = append(args, host.Name, "exit")
+	// Add the host name and the command to run (true)
+	args = append(args, host.Name, "true")
 
 	// Create command with context for timeout cancellation
 	// Note: We used pm.timeout for the ssh command option, but we also respect the context deadline

@@ -2,8 +2,8 @@ package ui
 
 import (
 	"fmt"
-	"path/filepath"
 	"github.com/Gu1llaum-3/sshm/internal/config"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
